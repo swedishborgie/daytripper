@@ -36,7 +36,7 @@ func execute() error {
 	if err != nil {
 		return err
 	}
-	defer dt.Close()
+	defer dt.Close() //nolint:errcheck // This is an example
 
 	// Set up and perform the request with authentication.
 	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://"+svr.Addr, nil)
@@ -50,7 +50,7 @@ func execute() error {
 	if err != nil {
 		return err
 	}
-	defer rsp.Body.Close()
+	defer rsp.Body.Close() //nolint:errcheck // This is an example
 
 	body, err := io.ReadAll(rsp.Body)
 	if err != nil {
@@ -59,7 +59,10 @@ func execute() error {
 
 	log.Printf("Response: %s", string(body))
 
-	svr.Close()
+	if err := svr.Close(); err != nil {
+		return err
+	}
+
 	<-done
 	return nil
 }
@@ -69,7 +72,7 @@ func setupServer() (chan any, *http.Server, error) {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Got authentication: %s", r.Header.Get("Authorization"))
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Hello world!"))
+			w.Write([]byte("Hello world!")) //nolint:errcheck // This is an example
 		}),
 	}
 	done := make(chan any)
@@ -80,7 +83,7 @@ func setupServer() (chan any, *http.Server, error) {
 	svr.Addr = conn.Addr().String()
 	go func() {
 		close(done)
-		svr.Serve(conn)
+		svr.Serve(conn) //nolint:errcheck // This is an example
 	}()
 
 	return done, svr, nil

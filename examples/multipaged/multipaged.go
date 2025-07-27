@@ -21,6 +21,9 @@ func main() {
 func execute() error {
 	// Start up a basic web server.
 	done, svr, err := setupServer()
+	if err != nil {
+		return err
+	}
 
 	// Set up the DayTripper
 	client := http.DefaultClient
@@ -33,7 +36,7 @@ func execute() error {
 	if err != nil {
 		return err
 	}
-	defer dt.Close()
+	defer dt.Close() //nolint:errcheck // This is an example
 
 	for i := 0; i < 10; i++ {
 		pageID := fmt.Sprintf("page_%d", i)
@@ -48,7 +51,10 @@ func execute() error {
 		}
 	}
 
-	svr.Close()
+	if err := svr.Close(); err != nil {
+		return err
+	}
+
 	<-done
 	return nil
 }
@@ -64,7 +70,7 @@ func doRequest(ctx context.Context, addr string, client *http.Client) error {
 	if err != nil {
 		return err
 	}
-	defer rsp.Body.Close()
+	defer rsp.Body.Close() //nolint:errcheck // This is an example
 
 	body, err := io.ReadAll(rsp.Body)
 	if err != nil {
@@ -82,7 +88,7 @@ func setupServer() (chan any, *http.Server, error) {
 			pageCount++
 			log.Printf("Got a request: %d", pageCount)
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(fmt.Sprintf("You made request: %d", pageCount)))
+			fmt.Fprintf(w, "You made request: %d", pageCount) //nolint:errcheck // This is an example
 		}),
 	}
 	done := make(chan any)
@@ -93,7 +99,7 @@ func setupServer() (chan any, *http.Server, error) {
 	svr.Addr = conn.Addr().String()
 	go func() {
 		close(done)
-		svr.Serve(conn)
+		svr.Serve(conn) //nolint:errcheck // This is an example
 	}()
 
 	return done, svr, nil

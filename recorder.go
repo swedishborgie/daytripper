@@ -75,14 +75,22 @@ func (d *DayTripper) recordRequest(report *tripReport) {
 	}
 }
 
+// headerSize will calculate the size of the headers in their post-parsed state.
+// This includes ': ' and the double '\r\n' at the end. Go doesn't expose a way
+// to get the header size pre-parsed, so this may not be exact, but it should be
+// very close in most cases.
 func headerSize(headers http.Header) uint64 {
 	var headerSize uint64
 
+	extraPerLine := uint64(len(": ") + len("\r\n"))
+
 	for k, vs := range headers {
 		for _, v := range vs {
-			headerSize += uint64(len(k) + len(v) + 1)
+			headerSize += uint64(len(k)+len(v)) + extraPerLine
 		}
 	}
+
+	headerSize += uint64(len("\r\n"))
 
 	return headerSize
 }

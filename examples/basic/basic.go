@@ -26,7 +26,7 @@ func execute() error {
 	if err != nil {
 		return err
 	}
-	defer dt.Close()
+	defer dt.Close() //nolint:errcheck // This is an example
 
 	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://ifconfig.me/all", nil)
 	if err != nil {
@@ -37,7 +37,7 @@ func execute() error {
 	if err != nil {
 		return err
 	}
-	defer rsp.Body.Close()
+	defer rsp.Body.Close() //nolint:errcheck // This is an example
 
 	body, err := io.ReadAll(rsp.Body)
 	if err != nil {
