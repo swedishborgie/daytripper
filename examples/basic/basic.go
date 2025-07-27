@@ -26,7 +26,7 @@ func execute() error {
 	if err != nil {
 		return err
 	}
-	defer dt.Close() //nolint:errcheck // This is an example
+	defer dt.Close()
 
 	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://ifconfig.me/all", nil)
 	if err != nil {
