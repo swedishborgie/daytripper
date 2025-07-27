@@ -3,6 +3,8 @@
     <img src="images/logo.png" alt="DayTripper Logo" />
 </div>
 
+![Code Coverage](https://img.shields.io/codecov/c/github/swedishborgie/daytripper)
+
 A zero-dependency library for transparently recording HTTP conversations between Go HTTP clients and servers. Works with
 most Go libraries that support passing in [http.Client](https://pkg.go.dev/net/http#Client) or 
 [http.RoundTripper](https://pkg.go.dev/net/http#RoundTripper).
