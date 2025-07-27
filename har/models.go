@@ -332,13 +332,8 @@ type WebSocketMessage struct {
 // the Unix Epoch.
 type TimeMS time.Time
 
-func (t *TimeMS) MarshalJSON() ([]byte, error) {
-	if t == nil {
-		return []byte("null"), nil
-	}
-
-	tmFloat := float64(time.Time(*t).UnixNano()) / float64(time.Millisecond)
-	return json.Marshal(tmFloat)
+func (t TimeMS) MarshalJSON() ([]byte, error) {
+	return json.Marshal(float64(time.Time(t).UnixNano()) / float64(time.Millisecond))
 }
 
 func (t *TimeMS) UnmarshalJSON(b []byte) error {
@@ -355,13 +350,8 @@ func (t *TimeMS) UnmarshalJSON(b []byte) error {
 // milliseconds in the duration.
 type DurationMS time.Duration
 
-func (d *DurationMS) MarshalJSON() ([]byte, error) {
-	if d == nil {
-		return []byte("null"), nil
-	}
-
-	durFloat := float64(*d) / float64(time.Millisecond)
-	return json.Marshal(durFloat)
+func (d DurationMS) MarshalJSON() ([]byte, error) {
+	return json.Marshal(float64(d) / float64(time.Millisecond))
 }
 
 func (d *DurationMS) UnmarshalJSON(b []byte) error {
