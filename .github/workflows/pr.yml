@@ -1,9 +1,11 @@
 on:
-  push:
-    branches:
-      - main
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - edited
 jobs:
-  test:
+  test-and-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,9 +14,13 @@ jobs:
         with:
           go-version: 1.24.5
       - name: Run Unit Tests
-        run: go test -coverprofile coverage.txt -race ./...
+        run: go test -coverprofilge coverage.txt -race ./...
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: swedishborgie/daytripper
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
