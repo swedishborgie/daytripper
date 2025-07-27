@@ -4,6 +4,7 @@ on:
       - opened
       - reopened
       - edited
+      - synchronize
 jobs:
   test-and-lint:
     runs-on: ubuntu-latest
