@@ -5,12 +5,14 @@ import (
 	"github.com/swedishborgie/daytripper/har"
 	"net/http/httptrace"
 	"strings"
+	"sync"
 	"time"
 )
 
 type timingsTracker struct {
 	report     *tripReport
 	startTimes struct {
+		mutex    sync.Mutex
 		blocked  time.Time
 		dns      time.Time
 		connect  time.Time
@@ -45,9 +47,13 @@ func (t *timingsTracker) GetTracker() *httptrace.ClientTrace {
 }
 
 func (t *timingsTracker) getConn(_ string) {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
 	t.startTimes.blocked = time.Now()
 }
 func (t *timingsTracker) gotConn(_ httptrace.GotConnInfo) {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
 	t.report.entry.Timings.Blocked = har.DurationMS(time.Since(t.startTimes.blocked))
 	// Set this here, in the case of pooled connections, this might be the step before send starts.
 	// This will get overwritten later if there are further steps.
@@ -55,19 +61,31 @@ func (t *timingsTracker) gotConn(_ httptrace.GotConnInfo) {
 
 }
 func (t *timingsTracker) gotFirstResponseByte() {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
+
 	t.report.entry.Timings.Wait = har.DurationMS(time.Since(t.startTimes.wait))
 	t.startTimes.response = time.Now()
 }
 
 func (t *timingsTracker) dnsStart(_ httptrace.DNSStartInfo) {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
+
 	t.startTimes.dns = time.Now()
 }
 
 func (t *timingsTracker) dnsDone(_ httptrace.DNSDoneInfo) {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
+
 	t.report.entry.Timings.DNS = har.DurationMS(time.Since(t.startTimes.dns))
 }
 
 func (t *timingsTracker) connectStart(_ string, addr string) {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
+
 	portIdx := strings.LastIndex(addr, ":")
 
 	if portIdx < 0 {
@@ -80,25 +98,40 @@ func (t *timingsTracker) connectStart(_ string, addr string) {
 }
 
 func (t *timingsTracker) connectDone(_ string, _ string, _ error) {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
+
 	t.report.entry.Timings.Connect = har.DurationMS(time.Since(t.startTimes.connect))
 	// In the case of HTTP connections, TLS will get skipped.
 	t.startTimes.send = time.Now()
 }
 
 func (t *timingsTracker) tlsHandshakeStart() {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
+
 	t.startTimes.tls = time.Now()
 }
 
 func (t *timingsTracker) tlsHandshakeDone(tls.ConnectionState, error) {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
+
 	t.report.entry.Timings.SSL = har.DurationMS(time.Since(t.startTimes.tls))
 	t.startTimes.send = time.Now()
 }
 
 func (t *timingsTracker) wroteRequest(_ httptrace.WroteRequestInfo) {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
+
 	t.report.entry.Timings.Send = har.DurationMS(time.Since(t.startTimes.send))
 	t.startTimes.wait = time.Now()
 }
 
 func (t *timingsTracker) responseRead() {
+	t.startTimes.mutex.Lock()
+	defer t.startTimes.mutex.Unlock()
+
 	t.report.entry.Timings.Receive = har.DurationMS(time.Since(t.startTimes.response))
 }

@@ -1,8 +1,11 @@
 package daytripper_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"github.com/swedishborgie/daytripper"
+	"github.com/swedishborgie/daytripper/har"
 	"github.com/swedishborgie/daytripper/receiver"
 	"io"
 	"net/http"
@@ -25,6 +28,11 @@ func TestDayTripperBasic(t *testing.T) {
 	}, func(svr *httptest.Server) (*http.Request, error) {
 		return http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
 	})
+	tt.Options = append(tt.Options,
+		daytripper.WithCreator("test creator"),
+		daytripper.WithHARVersion("1.3"),
+		daytripper.WithVersion("1.2.3"),
+	)
 	tt.execute(t)
 
 	if tt.Response.StatusCode != http.StatusOK {
@@ -49,6 +57,52 @@ func TestDayTripperBasic(t *testing.T) {
 	}
 	if entry.Response.Content.Text != expectedBody {
 		t.Fatalf("got %s, want %s", entry.Response.Content.Text, expectedBody)
+	}
+
+	if tt.Receiver.Version.Creator != "test creator" {
+		t.Fatalf("got %s, want %s", tt.Receiver.Version.Creator, "test creator")
+	}
+	if tt.Receiver.Version.Version != "1.2.3" {
+		t.Fatalf("got %s, want %s", tt.Receiver.Version.Version, "1.2.3")
+	}
+	if tt.Receiver.Version.HARVersion != "1.3" {
+		t.Fatalf("got %s, want %s", tt.Receiver.Version.HARVersion, "1.3")
+	}
+}
+
+func TestDayTripperMiddleware(t *testing.T) {
+	t.Parallel()
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte("OK")); err != nil {
+			t.Error(err)
+		}
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		ctx := daytripper.StartPage(context.Background(), "page_1", "Test Page", "")
+		ctx = daytripper.EndPage(ctx, "page_1")
+		return http.NewRequestWithContext(ctx, http.MethodGet, svr.URL, nil)
+	})
+	tt.Options = append(tt.Options, daytripper.WithEntryMiddleware(func(entryReceiver receiver.EntryReceiver) receiver.EntryReceiver {
+		return func(entry *har.Entry) error {
+			entry.Comment = "Test entry comment"
+			return entryReceiver(entry)
+		}
+	}))
+	tt.Options = append(tt.Options, daytripper.WithPageMiddleware(func(pageReceiver receiver.PageReceiver) receiver.PageReceiver {
+		return func(page *har.Page) {
+			page.Comment = "Test page comment"
+			pageReceiver(page)
+		}
+	}))
+	tt.execute(t)
+
+	if tt.Receiver.Entries[0].Comment != "Test entry comment" {
+		t.Fatalf("got %s, want %s", tt.Receiver.Entries[0].Comment, "Test entry comment")
+	}
+
+	if tt.Receiver.Pages[0].Comment != "Test page comment" {
+		t.Fatalf("got %s, want %s", tt.Receiver.Pages[0].Comment, "Test page comment")
 	}
 }
 
@@ -116,6 +170,125 @@ func TestDayTripperCookies(t *testing.T) {
 	}
 }
 
+func TestDayTripperQueryParams(t *testing.T) {
+	t.Parallel()
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte("OK")); err != nil {
+			t.Error(err)
+		}
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		return http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL+"?foo=bar&baz", nil)
+	})
+	tt.execute(t)
+
+	entry := tt.Receiver.Entries[0]
+
+	if len(entry.Request.QueryString) != 2 {
+		t.Fatalf("got %d, want %d", len(entry.Request.QueryString), 2)
+	}
+
+	qs := entry.Request.QueryString
+	idxFoo, idxBaz := 0, 1
+	if qs[0].Name == "baz" {
+		idxBaz, idxFoo = 0, 1
+	}
+	if qs[idxFoo].Name != "foo" {
+		t.Fatalf("got %s, want %s", qs[0].Name, "foo")
+	}
+	if qs[idxFoo].Value != "bar" {
+		t.Fatalf("got %s, want %s", qs[0].Value, "bar")
+	}
+	if qs[idxBaz].Name != "baz" {
+		t.Fatalf("got %s, want %s", qs[1].Name, "baz")
+	}
+	if qs[idxBaz].Value != "" {
+		t.Fatalf("got %s, want %s", qs[1].Value, "")
+	}
+}
+
+func TestDayTripperPostBody(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		body     []byte
+		mimeType string
+		b64Enc   bool
+	}{
+		{name: "text", body: []byte("This is an example post body."), mimeType: "text/plain; charset=utf-8"},
+		{name: "binary", body: []byte{0xff, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, mimeType: "application/octet-stream", b64Enc: true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", r.Header.Get("Content-Type"))
+				w.WriteHeader(http.StatusOK)
+				if _, err := io.Copy(w, r.Body); err != nil {
+					t.Error(err)
+				}
+			}, func(svr *httptest.Server) (*http.Request, error) {
+				req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, svr.URL, bytes.NewReader(tc.body))
+				if err != nil {
+					return nil, err
+				}
+				req.Header.Set("Content-Type", tc.mimeType)
+				return req, nil
+			})
+			tt.execute(t)
+
+			entry := tt.Receiver.Entries[0]
+
+			if len(tc.body) != int(entry.Request.BodySize) {
+				t.Fatalf("got %d, want %d", len(tc.body), int(entry.Request.BodySize))
+			}
+
+			if len(tc.body) != int(entry.Response.BodySize) {
+				t.Fatalf("got %d, want %d", len(tc.body), int(entry.Response.BodySize))
+			}
+
+			if !tc.b64Enc {
+				if entry.Request.PostData.Text != string(tc.body) {
+					t.Fatalf("got %s, want %s", entry.Request.PostData.Text, tc.body)
+				}
+
+				if entry.Response.Content.Text != string(tc.body) {
+					t.Fatalf("got %s, want %s", entry.Response.Content.Text, tc.body)
+				}
+			} else {
+				decoded, err := base64.StdEncoding.DecodeString(entry.Request.PostData.Text)
+				if err != nil {
+					t.Fatal(err)
+					return
+				}
+				if !bytes.Equal(decoded, tc.body) {
+					t.Fatalf("got %s, want %s", decoded, tc.body)
+				}
+
+				decoded, err = base64.StdEncoding.DecodeString(entry.Response.Content.Text)
+				if err != nil {
+					t.Fatal(err)
+					return
+				}
+				if !bytes.Equal(decoded, tc.body) {
+					t.Fatalf("got %s, want %s", decoded, tc.body)
+				}
+			}
+
+			if entry.Request.PostData.MimeType != tc.mimeType {
+				t.Fatalf("got %s, want %s", entry.Request.PostData.MimeType, tc.mimeType)
+			}
+
+			if entry.Response.Content.MimeType != tc.mimeType {
+				t.Fatalf("got %s, want %s", entry.Response.Content.MimeType, tc.mimeType)
+			}
+		})
+	}
+}
+
 type makeRequestFunc func(*httptest.Server) (*http.Request, error)
 
 type testTrip struct {
@@ -125,6 +298,7 @@ type testTrip struct {
 	Body        []byte
 	Receiver    *receiver.MemoryReceiver
 	ReqCookies  []*http.Cookie
+	Options     []daytripper.Option
 	Jar         *cookiejar.Jar
 }
 
@@ -138,7 +312,7 @@ func newTestTrip(handler http.HandlerFunc, mkFunc makeRequestFunc) *testTrip {
 func (tt *testTrip) execute(t *testing.T) {
 	t.Helper()
 
-	svr := httptest.NewServer(tt.Handler)
+	svr := httptest.NewTLSServer(tt.Handler)
 	client := svr.Client()
 	defer svr.Close()
 
@@ -161,7 +335,8 @@ func (tt *testTrip) execute(t *testing.T) {
 	}
 
 	recv := receiver.NewMemoryReceiver()
-	dt, err := daytripper.New(daytripper.WithReceiver(recv), daytripper.WithClient(client))
+	tt.Options = append(tt.Options, daytripper.WithReceiver(recv), daytripper.WithClient(client))
+	dt, err := daytripper.New(tt.Options...)
 	if err != nil {
 		t.Fatal(err)
 		return
