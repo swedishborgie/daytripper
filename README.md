@@ -4,6 +4,9 @@
 </div>
 
 [![Code Coverage](https://img.shields.io/codecov/c/github/swedishborgie/daytripper)](https://app.codecov.io/github/swedishborgie/daytripper)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/swedishborgie/daytripper/main.yml)](https://github.com/swedishborgie/daytripper/actions/workflows/main.yml)
+![MIT License](https://img.shields.io/github/license/swedishborgie/daytripper
+)
 
 A zero-dependency library for transparently recording HTTP conversations between Go HTTP clients and servers. Works with
 most Go libraries that support passing in [http.Client](https://pkg.go.dev/net/http#Client) or 
@@ -28,7 +31,7 @@ You might find this library useful for the following tasks
 * Debugging HTTP client Applications; use for when you need to be able to visualize and inspect applications you're
   writing that are interacting with HTTP servers.
 * Understanding how third party libraries are making requests.
-* Allowing your application to collect diagnostic information which they can send you to help with bug reporting.
+* Allowing your application to collect diagnostic information which your users can send you to help with bug reporting.
 
 ## Installation
 ```

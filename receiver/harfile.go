@@ -9,7 +9,8 @@ import (
 
 // HARFileReceiver is a basic implementation of a receiver that stores state in memory and flushes to a single file.
 // This is a good option if you have a small number of requests, but you'll run into issues if you have too many
-// requests or if those requests are too large.
+// requests or if those requests are too large. This implementation buffers into memory until closed, which means that
+// the more requests you make, the more memory it will consume.
 //
 // With this implementation every time you flush, the entire archive needs to be re-written from the beginning.
 // You should either flush infrequently or flush on close.
@@ -67,6 +68,9 @@ func (s *HARFileReceiver) Page(page *har.Page) {
 
 // Flush flushes the entire archive to disk. It will truncate the file and re-write the entire state.
 func (s *HARFileReceiver) Flush() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
 	harLog := &har.HTTPArchive{
 		Log: &har.Log{
 			Version: s.version.HARVersion,
@@ -96,12 +100,12 @@ func (s *HARFileReceiver) Flush() error {
 
 // Close will flush and close the file, it will also dispose of all the recorded entries and pages.
 func (s *HARFileReceiver) Close() error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
 	if err := s.Flush(); err != nil {
 		return err
 	}
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 
 	s.pages = make([]*har.Page, 0)
 	s.entries = make([]*har.Entry, 0)
