@@ -1,9 +1,10 @@
 package middleware
 
 import (
+	"net/http"
+
 	"github.com/swedishborgie/daytripper/har"
 	"github.com/swedishborgie/daytripper/receiver"
-	"net/http"
 )
 
 // RedactHeader will scan request and response headers for a particular header key, if found it will be replaced by the

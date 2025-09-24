@@ -2,11 +2,12 @@ package daytripper
 
 import (
 	"crypto/tls"
-	"github.com/swedishborgie/daytripper/har"
 	"net/http/httptrace"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/swedishborgie/daytripper/har"
 )
 
 type timingsTracker struct {
@@ -51,6 +52,7 @@ func (t *timingsTracker) getConn(_ string) {
 	defer t.startTimes.mutex.Unlock()
 	t.startTimes.blocked = time.Now()
 }
+
 func (t *timingsTracker) gotConn(_ httptrace.GotConnInfo) {
 	t.startTimes.mutex.Lock()
 	defer t.startTimes.mutex.Unlock()
@@ -58,8 +60,8 @@ func (t *timingsTracker) gotConn(_ httptrace.GotConnInfo) {
 	// Set this here, in the case of pooled connections, this might be the step before send starts.
 	// This will get overwritten later if there are further steps.
 	t.startTimes.send = time.Now()
-
 }
+
 func (t *timingsTracker) gotFirstResponseByte() {
 	t.startTimes.mutex.Lock()
 	defer t.startTimes.mutex.Unlock()

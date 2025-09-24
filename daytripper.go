@@ -4,12 +4,13 @@ package daytripper
 import (
 	"context"
 	"errors"
-	"github.com/swedishborgie/daytripper/har"
-	"github.com/swedishborgie/daytripper/receiver"
 	"net/http"
 	"net/http/httptrace"
 	"sync"
 	"time"
+
+	"github.com/swedishborgie/daytripper/har"
+	"github.com/swedishborgie/daytripper/receiver"
 )
 
 var ErrNoReceiver = errors.New("no receiver configured")

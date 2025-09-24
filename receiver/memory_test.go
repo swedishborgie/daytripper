@@ -1,9 +1,10 @@
 package receiver_test
 
 import (
+	"testing"
+
 	"github.com/swedishborgie/daytripper/har"
 	"github.com/swedishborgie/daytripper/receiver"
-	"testing"
 )
 
 func TestMemoryReceiver(t *testing.T) {

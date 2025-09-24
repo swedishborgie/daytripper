@@ -28,7 +28,9 @@ type Receiver interface {
 	Close() error
 }
 
-type EntryReceiver func(*har.Entry) error
-type PageReceiver func(*har.Page)
-type EntryMiddleware func(EntryReceiver) EntryReceiver
-type PageMiddleware func(PageReceiver) PageReceiver
+type (
+	EntryReceiver   func(*har.Entry) error
+	PageReceiver    func(*har.Page)
+	EntryMiddleware func(EntryReceiver) EntryReceiver
+	PageMiddleware  func(PageReceiver) PageReceiver
+)

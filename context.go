@@ -2,8 +2,9 @@ package daytripper
 
 import (
 	"context"
-	"github.com/swedishborgie/daytripper/har"
 	"time"
+
+	"github.com/swedishborgie/daytripper/har"
 )
 
 type contextKey string

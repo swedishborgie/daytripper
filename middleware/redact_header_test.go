@@ -1,10 +1,11 @@
 package middleware_test
 
 import (
-	"github.com/swedishborgie/daytripper/har"
-	"github.com/swedishborgie/daytripper/middleware"
 	"net/http"
 	"testing"
+
+	"github.com/swedishborgie/daytripper/har"
+	"github.com/swedishborgie/daytripper/middleware"
 )
 
 func TestRedactHeader(t *testing.T) {

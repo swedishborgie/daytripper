@@ -43,7 +43,7 @@ type Agent struct {
 
 type Page struct {
 	// StartedDateTime is the time for the beginning of the page load.
-	StartedDateTime time.Time `json:"startedDateTime,omitempty"`
+	StartedDateTime time.Time `json:"startedDateTime"`
 	// ID is a unique identifier of a page within the log. Entries use it to refer to the parent page (see: Entry.PageRef).
 	ID string `json:"id,omitempty"`
 	// Title is the recorded page title.
@@ -60,7 +60,7 @@ type PageTimings struct {
 	// Use -1 if the timing does not apply to the current request.
 	OnContentLoaded DurationMS `json:"onContentLoaded,omitempty"`
 	// OnLoad is the number of milliseconds since a page load started (Page.StartedDateTime).
-	//Use -1 if the timing does not apply to the current request.
+	// Use -1 if the timing does not apply to the current request.
 	OnLoad DurationMS `json:"onLoad,omitempty"`
 }
 
@@ -69,7 +69,7 @@ type Entry struct {
 	// PageRef is a reference to the page this request is a part of.
 	PageRef string `json:"pageref,omitempty"`
 	// StartedDateTime is the time the request was started.
-	StartedDateTime time.Time `json:"startedDateTime,omitempty"`
+	StartedDateTime time.Time `json:"startedDateTime"`
 	// Time is the total elapsed time of the request in milliseconds.
 	// This is the sum of all timings available in the timings object.
 	Time DurationMS `json:"time,omitempty"`
@@ -180,7 +180,7 @@ type Cookie struct {
 	// Domain is the domain the cookie is associated with.
 	Domain string `json:"domain,omitempty"`
 	// Expires is the expiration time of the cookie.
-	Expires time.Time `json:"expires,omitempty"`
+	Expires time.Time `json:"expires"`
 	// Secure indicates whether this cookie can be sent only to TLS endpoints.
 	Secure bool `json:"secure,omitempty"`
 	// HttpOnly indicates whether this cookie is only accessible to HTTP requests (e.g. no JavaScript).
@@ -268,9 +268,9 @@ type Cache struct {
 // CacheEntry contains information about a cache state.
 type CacheEntry struct {
 	// Expires is the expiration time of the cache entry.
-	Expires time.Time `json:"expires,omitempty"`
+	Expires time.Time `json:"expires"`
 	// LastAccess is the last time the cache entry was opened.
-	LastAccess time.Time `json:"lastAccess,omitempty"`
+	LastAccess time.Time `json:"lastAccess"`
 	// ETag is the cache etag associated with the request.
 	ETag string `json:"eTag,omitempty"`
 	// HitCount is the number of times the cache entry has been opened.

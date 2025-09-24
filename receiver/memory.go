@@ -1,8 +1,9 @@
 package receiver
 
 import (
-	"github.com/swedishborgie/daytripper/har"
 	"sync"
+
+	"github.com/swedishborgie/daytripper/har"
 )
 
 // MemoryReceiver simply buffers pages and entries in memory. It doesn't make any attempt to save anything. Mostly

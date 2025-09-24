@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"github.com/swedishborgie/daytripper"
-	"github.com/swedishborgie/daytripper/har"
-	"github.com/swedishborgie/daytripper/receiver"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/swedishborgie/daytripper"
+	"github.com/swedishborgie/daytripper/har"
+	"github.com/swedishborgie/daytripper/receiver"
 )
 
 func TestDayTripperBasic(t *testing.T) {

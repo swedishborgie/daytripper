@@ -1,8 +1,9 @@
 package daytripper
 
 import (
-	"github.com/swedishborgie/daytripper/receiver"
 	"net/http"
+
+	"github.com/swedishborgie/daytripper/receiver"
 )
 
 type Option func(*DayTripper)

@@ -38,7 +38,7 @@ func execute() error {
 	}
 	defer dt.Close() //nolint:errcheck // This is an example
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		pageID := fmt.Sprintf("page_%d", i)
 		ctx := context.Background()
 		ctx = daytripper.IncludeContext(ctx)                                   // Indicate to the recorder we should record this request.

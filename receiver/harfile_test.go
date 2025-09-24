@@ -2,10 +2,11 @@ package receiver_test
 
 import (
 	"encoding/json"
-	"github.com/swedishborgie/daytripper/har"
-	"github.com/swedishborgie/daytripper/receiver"
 	"os"
 	"testing"
+
+	"github.com/swedishborgie/daytripper/har"
+	"github.com/swedishborgie/daytripper/receiver"
 )
 
 func TestHarFileReceiver(t *testing.T) {

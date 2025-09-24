@@ -2,9 +2,10 @@ package receiver
 
 import (
 	"encoding/json"
-	"github.com/swedishborgie/daytripper/har"
 	"os"
 	"sync"
+
+	"github.com/swedishborgie/daytripper/har"
 )
 
 // HARFileReceiver is a basic implementation of a receiver that stores state in memory and flushes to a single file.
@@ -14,6 +15,9 @@ import (
 //
 // With this implementation every time you flush, the entire archive needs to be re-written from the beginning.
 // You should either flush infrequently or flush on close.
+//
+// If you need something more robust, consider using checkpoint.Receiver which will automatically rotate files based
+// on size or time.
 type HARFileReceiver struct {
 	mutex    sync.Mutex
 	entries  []*har.Entry

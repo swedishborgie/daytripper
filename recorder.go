@@ -2,10 +2,11 @@ package daytripper
 
 import (
 	"encoding/base64"
-	"github.com/swedishborgie/daytripper/har"
 	"net/http"
 	"time"
 	"unicode/utf8"
+
+	"github.com/swedishborgie/daytripper/har"
 )
 
 type tripReport struct {

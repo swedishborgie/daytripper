@@ -2,9 +2,10 @@ package har_test
 
 import (
 	"encoding/json"
-	"github.com/swedishborgie/daytripper/har"
 	"testing"
 	"time"
+
+	"github.com/swedishborgie/daytripper/har"
 )
 
 func TestTimeMSJSON(t *testing.T) {
