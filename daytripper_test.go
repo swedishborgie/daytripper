@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -374,4 +376,29 @@ func (tt *testTrip) execute(t *testing.T) {
 
 	tt.Body = body
 	tt.Receiver = recv
+}
+
+func TestRequestWithError(t *testing.T) {
+	t.Parallel()
+
+	mockErr := errors.New("mock error")
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return nil, mockErr
+			},
+		},
+	}
+
+	recv := receiver.NewMemoryReceiver()
+	_, err := daytripper.New(daytripper.WithReceiver(recv), daytripper.WithClient(client))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.Get("https://nowhere.com")
+	if !errors.Is(err, mockErr) {
+		t.Errorf("got %v, want %v", err, mockErr)
+	}
 }

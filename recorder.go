@@ -97,6 +97,11 @@ func headerSize(headers http.Header) uint64 {
 }
 
 func (d *DayTripper) recordResponse(report *tripReport) {
+	if report.rsp == nil {
+		// Nothing we can do, no response.
+		return
+	}
+
 	report.entry.Response = &har.Response{
 		Status:      report.rsp.StatusCode,
 		StatusText:  report.rsp.Status,
