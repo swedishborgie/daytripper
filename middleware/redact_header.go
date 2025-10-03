@@ -14,15 +14,19 @@ func RedactHeader(header, value string) receiver.EntryMiddleware {
 		redactHeader := http.CanonicalHeaderKey(header)
 
 		return func(entry *har.Entry) error {
-			for _, h := range entry.Request.Headers {
-				if redactHeader == http.CanonicalHeaderKey(h.Name) {
-					h.Value = value
+			if entry.Request != nil {
+				for _, h := range entry.Request.Headers {
+					if redactHeader == http.CanonicalHeaderKey(h.Name) {
+						h.Value = value
+					}
 				}
 			}
 
-			for _, h := range entry.Response.Headers {
-				if redactHeader == http.CanonicalHeaderKey(h.Name) {
-					h.Value = value
+			if entry.Response != nil {
+				for _, h := range entry.Response.Headers {
+					if redactHeader == http.CanonicalHeaderKey(h.Name) {
+						h.Value = value
+					}
 				}
 			}
 

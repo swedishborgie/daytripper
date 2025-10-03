@@ -40,6 +40,12 @@ func TestRedactHeader(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:  "nil check",
+			key:   "authorization",
+			value: "******",
+			entry: &har.Entry{},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -49,17 +55,21 @@ func TestRedactHeader(t *testing.T) {
 			redactMW := middleware.RedactHeader(tc.key, tc.value)
 
 			err := redactMW(func(entry *har.Entry) error {
-				for _, h := range entry.Request.Headers {
-					if http.CanonicalHeaderKey(h.Name) == http.CanonicalHeaderKey(tc.key) &&
-						h.Value != tc.value {
-						t.Fatalf("redacted header value is %s, want %s", h.Value, tc.value)
+				if entry.Request != nil {
+					for _, h := range entry.Request.Headers {
+						if http.CanonicalHeaderKey(h.Name) == http.CanonicalHeaderKey(tc.key) &&
+							h.Value != tc.value {
+							t.Fatalf("redacted header value is %s, want %s", h.Value, tc.value)
+						}
 					}
 				}
 
-				for _, h := range entry.Response.Headers {
-					if http.CanonicalHeaderKey(h.Name) == http.CanonicalHeaderKey(tc.key) &&
-						h.Value != tc.value {
-						t.Fatalf("redacted header value is %s, want %s", h.Value, tc.value)
+				if entry.Response != nil {
+					for _, h := range entry.Response.Headers {
+						if http.CanonicalHeaderKey(h.Name) == http.CanonicalHeaderKey(tc.key) &&
+							h.Value != tc.value {
+							t.Fatalf("redacted header value is %s, want %s", h.Value, tc.value)
+						}
 					}
 				}
 
