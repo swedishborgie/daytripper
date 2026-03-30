@@ -110,8 +110,14 @@ func (d *DayTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	var rspBodyCopier *streamCopier
 	if rsp != nil {
-		rspBodyCopier = newStreamCopier(rsp.Body, doneFunc)
-		rsp.Body = rspBodyCopier
+		if rsp.Body != nil {
+			rspBodyCopier = newStreamCopier(rsp.Body, doneFunc)
+			rsp.Body = rspBodyCopier
+		} else {
+			if err := doneFunc(); err != nil {
+				return nil, err
+			}
+		}
 		report.rsp = rsp
 		report.rspBody = rspBodyCopier
 	} else {

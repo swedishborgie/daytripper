@@ -11,12 +11,23 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/swedishborgie/daytripper"
 	"github.com/swedishborgie/daytripper/har"
 	"github.com/swedishborgie/daytripper/receiver"
 )
+
+type mockTripper struct {
+	resp *http.Response
+	err  error
+}
+
+func (m *mockTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return m.resp, m.err
+}
 
 func TestDayTripperBasic(t *testing.T) {
 	t.Parallel()
@@ -400,5 +411,193 @@ func TestRequestWithError(t *testing.T) {
 	_, err = client.Get("https://nowhere.com")
 	if !errors.Is(err, mockErr) {
 		t.Errorf("got %v, want %v", err, mockErr)
+	}
+}
+
+func TestRoundTripNilResponseBody(t *testing.T) {
+	t.Parallel()
+
+	recv := receiver.NewMemoryReceiver()
+	mt := &mockTripper{
+		resp: &http.Response{
+			Status:     "200 OK",
+			StatusCode: http.StatusOK,
+			Body:       nil,
+		},
+	}
+	dt, err := daytripper.New(daytripper.WithReceiver(recv), daytripper.WithTripper(mt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/", nil)
+	rsp, err := dt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	if rsp == nil {
+		t.Fatal("expected non-nil response")
+	}
+
+	if len(recv.Entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(recv.Entries))
+	}
+}
+
+func TestWithIncludeAllFalse(t *testing.T) {
+	t.Parallel()
+
+	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer svr.Close()
+
+	recv := receiver.NewMemoryReceiver()
+	client := &http.Client{}
+	dt, err := daytripper.New(
+		daytripper.WithReceiver(recv),
+		daytripper.WithIncludeAll(false),
+		daytripper.WithClient(client),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	drainResponse := func(t *testing.T, rsp *http.Response) {
+		t.Helper()
+		_, _ = io.ReadAll(rsp.Body)
+		_ = rsp.Body.Close()
+	}
+
+	// Request without IncludeContext — should NOT be recorded.
+	req1, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+	rsp1, err := client.Do(req1)
+	if err != nil {
+		t.Fatalf("request 1: %v", err)
+	}
+	drainResponse(t, rsp1)
+
+	// Request with IncludeContext — should be recorded.
+	ctx := daytripper.IncludeContext(context.Background())
+	req2, _ := http.NewRequestWithContext(ctx, http.MethodGet, svr.URL, nil)
+	rsp2, err := client.Do(req2)
+	if err != nil {
+		t.Fatalf("request 2: %v", err)
+	}
+	drainResponse(t, rsp2)
+
+	if len(recv.Entries) != 1 {
+		t.Errorf("got %d entries, want 1", len(recv.Entries))
+	}
+}
+
+func TestDayTripperFlush(t *testing.T) {
+	t.Parallel()
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		return http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+	})
+
+	svr := httptest.NewTLSServer(tt.Handler)
+	defer svr.Close()
+
+	client := svr.Client()
+	recv := receiver.NewMemoryReceiver()
+	dt, err := daytripper.New(daytripper.WithReceiver(recv), daytripper.WithClient(client))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	req, err := tt.MakeRequest(svr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rsp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(rsp.Body)
+	_ = rsp.Body.Close()
+
+	if err := dt.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+}
+
+func TestConcurrentRequests(t *testing.T) {
+	t.Parallel()
+
+	const numRequests = 10
+
+	svr := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer svr.Close()
+
+	client := svr.Client()
+	recv := receiver.NewMemoryReceiver()
+	dt, err := daytripper.New(daytripper.WithReceiver(recv), daytripper.WithClient(client))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	var wg sync.WaitGroup
+	for i := 0; i < numRequests; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+			rsp, err := client.Do(req)
+			if err != nil {
+				t.Errorf("request: %v", err)
+				return
+			}
+			_, _ = io.ReadAll(rsp.Body)
+			_ = rsp.Body.Close()
+		}()
+	}
+	wg.Wait()
+
+	if len(recv.Entries) != numRequests {
+		t.Errorf("got %d entries, want %d", len(recv.Entries), numRequests)
+	}
+}
+
+func TestWithTripper(t *testing.T) {
+	t.Parallel()
+
+	recv := receiver.NewMemoryReceiver()
+	mt := &mockTripper{
+		resp: &http.Response{
+			Status:     "200 OK",
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("hello")),
+		},
+	}
+	dt, err := daytripper.New(daytripper.WithReceiver(recv), daytripper.WithTripper(mt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/", nil)
+	rsp, err := dt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	_, _ = io.ReadAll(rsp.Body)
+	_ = rsp.Body.Close()
+
+	if len(recv.Entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(recv.Entries))
+	}
+	if recv.Entries[0].Response.Content.Text != "hello" {
+		t.Errorf("response text = %q, want %q", recv.Entries[0].Response.Content.Text, "hello")
 	}
 }

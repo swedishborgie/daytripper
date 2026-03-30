@@ -109,17 +109,20 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 		Cookies:     convertCookies(report.rsp.Cookies()),
 		Headers:     convertHeaders(report.rsp.Header),
 		Content: &har.Content{
-			Size:     report.rspBody.count,
 			MimeType: report.rsp.Header.Get("Content-Type"),
 		},
 		HeadersSize: headerSize(report.rsp.Header),
-		BodySize:    report.rspBody.count,
 	}
 
-	if utf8.Valid(report.rspBody.buffer.Bytes()) {
-		report.entry.Response.Content.Text = report.rspBody.buffer.String()
-	} else {
-		report.entry.Response.Content.Text = base64.StdEncoding.EncodeToString(report.rspBody.buffer.Bytes())
+	if report.rspBody != nil {
+		report.entry.Response.Content.Size = report.rspBody.count
+		report.entry.Response.BodySize = report.rspBody.count
+
+		if utf8.Valid(report.rspBody.buffer.Bytes()) {
+			report.entry.Response.Content.Text = report.rspBody.buffer.String()
+		} else {
+			report.entry.Response.Content.Text = base64.StdEncoding.EncodeToString(report.rspBody.buffer.Bytes())
+		}
 	}
 
 	if report.rspErr != nil {

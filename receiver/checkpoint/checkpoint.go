@@ -55,7 +55,7 @@ func (r *Receiver) Start(version *receiver.Version) error {
 		return nil
 	}
 
-	return r.Start(version)
+	return r.harWriter.Start(version)
 }
 
 func (r *Receiver) Entry(entry *har.Entry) error {
