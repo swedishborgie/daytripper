@@ -1,6 +1,7 @@
 package daytripper
 
 import (
+	"bufio"
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
@@ -131,7 +132,9 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 		truncated := report.rspBody.truncated
 
 		if enc := report.rsp.Header.Get("Content-Encoding"); enc != "" {
-			if decoded, err := d.bodyDecoder(enc, bodyBytes, d.maxBodySize); err == nil {
+			var buf bytes.Buffer
+			if err := d.bodyDecoder(enc, bytes.NewReader(bodyBytes), &buf, d.maxBodySize); err == nil {
+				decoded := buf.Bytes()
 				if d.maxBodySize > 0 && int64(len(decoded)) > d.maxBodySize {
 					truncated = true
 					decoded = decoded[:d.maxBodySize]
@@ -182,49 +185,47 @@ func convertCookies(cookies []*http.Cookie) []*har.Cookie {
 
 // DecodeBody attempts to decode a response body according to its Content-Encoding header value.
 // Multiple encodings may be listed (comma-separated) and are applied in order. Unknown encodings
-// cause the function to return the raw bytes unchanged (best-effort).
-// maxSize limits the number of decompressed bytes read; 0 means unlimited. This prevents
+// stop the chain and the data decoded so far is written to dst (best-effort).
+// maxSize limits the number of decompressed bytes written; 0 means unlimited. This prevents
 // issues with compressed bodies expanding to an enormous decoded body.
-func DecodeBody(contentEncoding string, raw []byte, maxSize int64) ([]byte, error) {
-	data := raw
+func DecodeBody(contentEncoding string, src io.Reader, dst io.Writer, maxSize int64) error {
+	r := src
+outer:
 	for enc := range strings.SplitSeq(contentEncoding, ",") {
 		enc = strings.TrimSpace(strings.ToLower(enc))
 		switch enc {
 		case "identity", "":
 			// no-op
 		case "gzip":
-			r, err := gzip.NewReader(bytes.NewReader(data))
+			gr, err := gzip.NewReader(r)
 			if err != nil {
-				return raw, err
+				return err
 			}
-			decoded, err := io.ReadAll(limitReader(r, maxSize))
-			if err != nil {
-				return raw, err
-			}
-			data = decoded
+			defer gr.Close() //nolint:errcheck
+			r = gr
 		case "deflate":
-			// Try zlib (deflate with header) first, then raw deflate.
-			zr, err := zlib.NewReader(bytes.NewReader(data))
-			if err != nil {
-				fr := flate.NewReader(bytes.NewReader(data))
-				decoded, err := io.ReadAll(limitReader(fr, maxSize))
+			// Peek at the first two bytes to distinguish zlib (with header) from raw deflate.
+			// A valid zlib stream satisfies (CMF<<8 | FLG) % 31 == 0.
+			br := bufio.NewReader(r)
+			hdr, _ := br.Peek(2)
+			if len(hdr) == 2 && (uint(hdr[0])<<8|uint(hdr[1]))%31 == 0 {
+				zr, err := zlib.NewReader(br)
 				if err != nil {
-					return raw, err
+					return err
 				}
-				data = decoded
+				defer zr.Close() //nolint:errcheck
+				r = zr
 			} else {
-				decoded, err := io.ReadAll(limitReader(zr, maxSize))
-				if err != nil {
-					return raw, err
-				}
-				data = decoded
+				fr := flate.NewReader(br)
+				defer fr.Close() //nolint:errcheck
+				r = fr
 			}
 		default:
-			// Unsupported encoding — return what we have so far unchanged.
-			return raw, nil
+			break outer
 		}
 	}
-	return data, nil
+	_, err := io.Copy(dst, limitReader(r, maxSize))
+	return err
 }
 
 // limitReader wraps r with an io.LimitReader when maxSize > 0, otherwise returns r unchanged.

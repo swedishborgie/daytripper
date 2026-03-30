@@ -81,8 +81,8 @@ func WithMaxBodySize(maxBodySize int64) Option {
 
 // WithBodyDecoder sets a custom BodyDecoder function used to decode response bodies based on their
 // Content-Encoding header. Use this to add support for encodings not handled by the default decoder
-// (e.g. brotli, zstd). The provided function receives the Content-Encoding value, the raw body
-// bytes, and the maximum decoded size (0 means unlimited), and should return the decoded bytes.
+// (e.g. brotli, zstd). The provided function reads raw (compressed) bytes from src, writes decoded
+// bytes to dst, and should respect maxSize (0 means unlimited) to guard against unbounded decompression.
 func WithBodyDecoder(decoder BodyDecoder) Option {
 	return func(d *DayTripper) {
 		d.bodyDecoder = decoder

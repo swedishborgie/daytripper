@@ -4,6 +4,7 @@ package daytripper
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptrace"
 	"sync"
@@ -16,10 +17,10 @@ import (
 var ErrNoReceiver = errors.New("no receiver configured")
 
 // BodyDecoder is a function that decodes a response body given its Content-Encoding header value.
-// It receives the raw (possibly compressed) bytes and returns the decoded bytes.
-// maxSize limits the number of decoded bytes buffered; 0 means unlimited.
-// If decoding is not possible, it should return the original bytes and a non-nil error.
-type BodyDecoder func(contentEncoding string, body []byte, maxSize int64) ([]byte, error)
+// It reads compressed data from src and writes decoded data to dst.
+// maxSize limits the number of decoded bytes written; 0 means unlimited.
+// If decoding fails, the function should return a non-nil error without writing to dst.
+type BodyDecoder func(contentEncoding string, src io.Reader, dst io.Writer, maxSize int64) error
 
 // DayTripper is a request recorder that implements the http.RoundTripper interface. This can be used to transparently
 // record conversations to and from servers from any library or application that supports injecting an http.Transport
