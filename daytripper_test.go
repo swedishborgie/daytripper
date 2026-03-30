@@ -2,6 +2,9 @@ package daytripper_test
 
 import (
 	"bytes"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -599,5 +602,215 @@ func TestWithTripper(t *testing.T) {
 	}
 	if recv.Entries[0].Response.Content.Text != "hello" {
 		t.Errorf("response text = %q, want %q", recv.Entries[0].Response.Content.Text, "hello")
+	}
+}
+
+func TestDayTripperContentEncodingGzip(t *testing.T) {
+	t.Parallel()
+
+	plaintext := strings.Repeat("This is a gzip-compressed response body. ", 50)
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusOK)
+		gz := gzip.NewWriter(w)
+		_, _ = gz.Write([]byte(plaintext))
+		_ = gz.Close()
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Explicitly set Accept-Encoding so Go's transport does NOT auto-decompress.
+		req.Header.Set("Accept-Encoding", "gzip")
+		return req, nil
+	})
+	tt.execute(t)
+
+	entry := tt.Receiver.Entries[0]
+	if entry.Response.Content.Text != plaintext {
+		t.Errorf("Content.Text = %q, want %q", entry.Response.Content.Text, plaintext)
+	}
+	if entry.Response.Content.Size != uint64(len(plaintext)) {
+		t.Errorf("Content.Size = %d, want %d", entry.Response.Content.Size, len(plaintext))
+	}
+	if entry.Response.BodySize >= uint64(len(plaintext)) {
+		t.Errorf("BodySize = %d should be less than uncompressed size %d", entry.Response.BodySize, len(plaintext))
+	}
+	if entry.Response.Content.Compression == 0 {
+		t.Errorf("Content.Compression should be non-zero for a compressed response")
+	}
+}
+
+func TestMaxBodySizeResponseTruncation(t *testing.T) {
+	t.Parallel()
+
+	const maxSize = 10
+	body := strings.Repeat("A", 100)
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		return http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+	})
+	tt.Options = append(tt.Options, daytripper.WithMaxBodySize(maxSize))
+	tt.execute(t)
+
+	// The caller must still receive the full body.
+	if string(tt.Body) != body {
+		t.Errorf("caller received %d bytes, want %d", len(tt.Body), len(body))
+	}
+
+	entry := tt.Receiver.Entries[0]
+	if int64(len(entry.Response.Content.Text)) != maxSize {
+		t.Errorf("HAR Content.Text length = %d, want %d", len(entry.Response.Content.Text), maxSize)
+	}
+	if entry.Response.Content.Comment == "" {
+		t.Error("expected a truncation comment on Content, got none")
+	}
+}
+
+func TestMaxBodySizeGzipTruncation(t *testing.T) {
+	t.Parallel()
+
+	// Compress a large plaintext body so the decompressed size >> maxSize.
+	plaintext := strings.Repeat("AAAAAAAAAA", 200) // 2000 bytes decompressed
+	const maxSize int64 = 50
+
+	var compressed bytes.Buffer
+	gz := gzip.NewWriter(&compressed)
+	_, _ = gz.Write([]byte(plaintext))
+	_ = gz.Close()
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(compressed.Bytes())
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Prevent Go's transport from auto-decompressing so we see Content-Encoding.
+		req.Header.Set("Accept-Encoding", "gzip")
+		return req, nil
+	})
+	tt.Options = append(tt.Options, daytripper.WithMaxBodySize(maxSize))
+	tt.execute(t)
+
+	entry := tt.Receiver.Entries[0]
+	if int64(len(entry.Response.Content.Text)) != maxSize {
+		t.Errorf("HAR Content.Text length = %d, want %d", len(entry.Response.Content.Text), maxSize)
+	}
+	if entry.Response.Content.Comment == "" {
+		t.Error("expected a truncation comment on Content, got none")
+	}
+}
+
+func TestMaxBodySizeRequestTruncation(t *testing.T) {
+	t.Parallel()
+
+	const maxSize = 10
+	reqBody := strings.Repeat("B", 100)
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		return http.NewRequestWithContext(context.Background(), http.MethodPost, svr.URL,
+			strings.NewReader(reqBody))
+	})
+	tt.Options = append(tt.Options, daytripper.WithMaxBodySize(maxSize))
+	tt.execute(t)
+
+	entry := tt.Receiver.Entries[0]
+	if int64(len(entry.Request.PostData.Text)) != maxSize {
+		t.Errorf("HAR PostData.Text length = %d, want %d", len(entry.Request.PostData.Text), maxSize)
+	}
+	if entry.Request.PostData.Comment == "" {
+		t.Error("expected a truncation comment on PostData, got none")
+	}
+}
+
+func TestMaxBodySizeZeroUnlimited(t *testing.T) {
+	t.Parallel()
+
+	body := strings.Repeat("Z", 500)
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		return http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+	})
+	// maxBodySize = 0 means unlimited — no truncation.
+	tt.Options = append(tt.Options, daytripper.WithMaxBodySize(0))
+	tt.execute(t)
+
+	entry := tt.Receiver.Entries[0]
+	if entry.Response.Content.Text != body {
+		t.Errorf("HAR Content.Text length = %d, want %d", len(entry.Response.Content.Text), len(body))
+	}
+	if entry.Response.Content.Comment != "" {
+		t.Errorf("expected no truncation comment, got %q", entry.Response.Content.Comment)
+	}
+}
+
+func TestDayTripperContentEncodingDeflate(t *testing.T) {
+	t.Parallel()
+
+	const plaintext = "This is a deflate-compressed response body."
+
+	for _, tc := range []struct {
+		name  string
+		write func(w io.Writer, data []byte) error
+	}{
+		{
+			name: "zlib",
+			write: func(w io.Writer, data []byte) error {
+				zw := zlib.NewWriter(w)
+				_, err := zw.Write(data)
+				_ = zw.Close()
+				return err
+			},
+		},
+		{
+			name: "raw",
+			write: func(w io.Writer, data []byte) error {
+				fw, err := flate.NewWriter(w, flate.DefaultCompression)
+				if err != nil {
+					return err
+				}
+				_, err = fw.Write(data)
+				_ = fw.Close()
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain")
+				w.Header().Set("Content-Encoding", "deflate")
+				w.WriteHeader(http.StatusOK)
+				_ = tc.write(w, []byte(plaintext))
+			}, func(svr *httptest.Server) (*http.Request, error) {
+				return http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+			})
+			tt.execute(t)
+
+			entry := tt.Receiver.Entries[0]
+			if entry.Response.Content.Text != plaintext {
+				t.Errorf("Content.Text = %q, want %q", entry.Response.Content.Text, plaintext)
+			}
+			if entry.Response.Content.Size != uint64(len(plaintext)) {
+				t.Errorf("Content.Size = %d, want %d", entry.Response.Content.Size, len(plaintext))
+			}
+		})
 	}
 }

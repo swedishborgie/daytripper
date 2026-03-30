@@ -1,8 +1,15 @@
 package daytripper
 
 import (
+	"bytes"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"encoding/base64"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -73,6 +80,10 @@ func (d *DayTripper) recordRequest(report *tripReport) {
 		} else {
 			report.entry.Request.PostData.Text = base64.StdEncoding.EncodeToString(report.reqBody.buffer.Bytes())
 		}
+
+		if report.reqBody.truncated {
+			report.entry.Request.PostData.Comment = fmt.Sprintf("body truncated at %d bytes", d.maxBodySize)
+		}
 	}
 }
 
@@ -115,14 +126,35 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 	}
 
 	if report.rspBody != nil {
-		report.entry.Response.Content.Size = report.rspBody.count
-		report.entry.Response.BodySize = report.rspBody.count
+		bodyBytes := report.rspBody.buffer.Bytes()
+		compressedSize := report.rspBody.count
+		truncated := report.rspBody.truncated
 
-		if utf8.Valid(report.rspBody.buffer.Bytes()) {
-			report.entry.Response.Content.Text = report.rspBody.buffer.String()
+		if enc := report.rsp.Header.Get("Content-Encoding"); enc != "" {
+			if decoded, err := d.bodyDecoder(enc, bodyBytes, d.maxBodySize); err == nil {
+				if d.maxBodySize > 0 && int64(len(decoded)) > d.maxBodySize {
+					truncated = true
+					decoded = decoded[:d.maxBodySize]
+				}
+				bodyBytes = decoded
+			}
+		}
+
+		report.entry.Response.BodySize = compressedSize
+		report.entry.Response.Content.Size = uint64(len(bodyBytes))
+		if uint64(len(bodyBytes)) > compressedSize {
+			report.entry.Response.Content.Compression = uint64(len(bodyBytes)) - compressedSize
+		}
+
+		if utf8.Valid(bodyBytes) {
+			report.entry.Response.Content.Text = string(bodyBytes)
 		} else {
-			report.entry.Response.Content.Text = base64.StdEncoding.EncodeToString(report.rspBody.buffer.Bytes())
+			report.entry.Response.Content.Text = base64.StdEncoding.EncodeToString(bodyBytes)
 			report.entry.Response.Content.Encoding = "base64"
+		}
+
+		if truncated {
+			report.entry.Response.Content.Comment = fmt.Sprintf("body truncated at %d bytes", d.maxBodySize)
 		}
 	}
 
@@ -146,6 +178,62 @@ func convertCookies(cookies []*http.Cookie) []*har.Cookie {
 	}
 
 	return retr
+}
+
+// DecodeBody attempts to decode a response body according to its Content-Encoding header value.
+// Multiple encodings may be listed (comma-separated) and are applied in order. Unknown encodings
+// cause the function to return the raw bytes unchanged (best-effort).
+// maxSize limits the number of decompressed bytes read; 0 means unlimited. This prevents
+// issues with compressed bodies expanding to an enormous decoded body.
+func DecodeBody(contentEncoding string, raw []byte, maxSize int64) ([]byte, error) {
+	data := raw
+	for enc := range strings.SplitSeq(contentEncoding, ",") {
+		enc = strings.TrimSpace(strings.ToLower(enc))
+		switch enc {
+		case "identity", "":
+			// no-op
+		case "gzip":
+			r, err := gzip.NewReader(bytes.NewReader(data))
+			if err != nil {
+				return raw, err
+			}
+			decoded, err := io.ReadAll(limitReader(r, maxSize))
+			if err != nil {
+				return raw, err
+			}
+			data = decoded
+		case "deflate":
+			// Try zlib (deflate with header) first, then raw deflate.
+			zr, err := zlib.NewReader(bytes.NewReader(data))
+			if err != nil {
+				fr := flate.NewReader(bytes.NewReader(data))
+				decoded, err := io.ReadAll(limitReader(fr, maxSize))
+				if err != nil {
+					return raw, err
+				}
+				data = decoded
+			} else {
+				decoded, err := io.ReadAll(limitReader(zr, maxSize))
+				if err != nil {
+					return raw, err
+				}
+				data = decoded
+			}
+		default:
+			// Unsupported encoding — return what we have so far unchanged.
+			return raw, nil
+		}
+	}
+	return data, nil
+}
+
+// limitReader wraps r with an io.LimitReader when maxSize > 0, otherwise returns r unchanged.
+// We read maxSize+1 bytes so the caller can detect truncation by checking len(result) > maxSize.
+func limitReader(r io.Reader, maxSize int64) io.Reader {
+	if maxSize <= 0 {
+		return r
+	}
+	return io.LimitReader(r, maxSize+1)
 }
 
 func convertHeaders(headers http.Header) []*har.Header {

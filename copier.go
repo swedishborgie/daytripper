@@ -14,9 +14,11 @@ type streamCloseCallback func() error
 // and server. We passively observe the results. Someday we may want to cause this to offload to disk if the stream
 // gets too big.
 type streamCopier struct {
-	buffer  bytes.Buffer
-	wrapped io.ReadCloser
-	count   uint64
+	buffer    bytes.Buffer
+	wrapped   io.ReadCloser
+	count     uint64
+	maxSize   int64
+	truncated bool
 
 	cb         streamCloseCallback
 	closed     bool
@@ -24,14 +26,25 @@ type streamCopier struct {
 	closeMutex sync.Mutex
 }
 
-func newStreamCopier(wrapped io.ReadCloser, cb streamCloseCallback) *streamCopier {
-	return &streamCopier{wrapped: wrapped, done: make(chan bool), cb: cb}
+func newStreamCopier(wrapped io.ReadCloser, cb streamCloseCallback, maxSize int64) *streamCopier {
+	return &streamCopier{wrapped: wrapped, done: make(chan bool), cb: cb, maxSize: maxSize}
 }
 
 func (s *streamCopier) Read(p []byte) (n int, err error) {
 	cnt, err := s.wrapped.Read(p)
 	s.count += uint64(cnt)
-	s.buffer.Write(p[:cnt])
+
+	if s.maxSize <= 0 || int64(s.buffer.Len()) < s.maxSize {
+		canBuffer := cnt
+		if s.maxSize > 0 {
+			remaining := s.maxSize - int64(s.buffer.Len())
+			if int64(canBuffer) > remaining {
+				canBuffer = int(remaining)
+				s.truncated = true
+			}
+		}
+		s.buffer.Write(p[:canBuffer])
+	}
 
 	if errors.Is(err, io.EOF) {
 		if err := s.closeNotify(); err != nil {

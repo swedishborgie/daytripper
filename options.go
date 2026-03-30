@@ -68,6 +68,27 @@ func WithTripper(transport http.RoundTripper) Option {
 	}
 }
 
+// WithMaxBodySize sets the maximum number of bytes to buffer from request and response bodies.
+// Bodies exceeding this limit are truncated in the HAR output, and a comment is added to the
+// relevant HAR field indicating truncation. The limit also applies to decompressed content,
+// preventing unlimited expansion of compressed bodies. A value of 0 (the default) means
+// unlimited.
+func WithMaxBodySize(maxBodySize int64) Option {
+	return func(d *DayTripper) {
+		d.maxBodySize = maxBodySize
+	}
+}
+
+// WithBodyDecoder sets a custom BodyDecoder function used to decode response bodies based on their
+// Content-Encoding header. Use this to add support for encodings not handled by the default decoder
+// (e.g. brotli, zstd). The provided function receives the Content-Encoding value, the raw body
+// bytes, and the maximum decoded size (0 means unlimited), and should return the decoded bytes.
+func WithBodyDecoder(decoder BodyDecoder) Option {
+	return func(d *DayTripper) {
+		d.bodyDecoder = decoder
+	}
+}
+
 // WithClient will take the passed in client and will wrap the configured transport and assign the round tripper.
 // This won't work in all circumstances, you should look at WithTripper if you need more control over client
 // composition.

@@ -22,7 +22,7 @@ func TestStreamCopierDoubleClose(t *testing.T) {
 	t.Parallel()
 
 	cc := &callbackCounter{}
-	sc := newStreamCopier(io.NopCloser(strings.NewReader("hello")), cc.cb)
+	sc := newStreamCopier(io.NopCloser(strings.NewReader("hello")), cc.cb, 0)
 
 	if err := sc.Close(); err != nil {
 		t.Fatalf("first Close: %v", err)
@@ -40,7 +40,7 @@ func TestStreamCopierCloseWithoutRead(t *testing.T) {
 	t.Parallel()
 
 	cc := &callbackCounter{}
-	sc := newStreamCopier(io.NopCloser(strings.NewReader("hello")), cc.cb)
+	sc := newStreamCopier(io.NopCloser(strings.NewReader("hello")), cc.cb, 0)
 
 	if err := sc.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -58,7 +58,7 @@ func TestStreamCopierEmptyBody(t *testing.T) {
 	t.Parallel()
 
 	cc := &callbackCounter{}
-	sc := newStreamCopier(io.NopCloser(strings.NewReader("")), cc.cb)
+	sc := newStreamCopier(io.NopCloser(strings.NewReader("")), cc.cb, 0)
 
 	buf := make([]byte, 16)
 	n, err := sc.Read(buf)
@@ -81,7 +81,7 @@ func TestStreamCopierReadError(t *testing.T) {
 
 	readErr := errors.New("read fail")
 	cc := &callbackCounter{}
-	sc := newStreamCopier(io.NopCloser(iotest.ErrReader(readErr)), cc.cb)
+	sc := newStreamCopier(io.NopCloser(iotest.ErrReader(readErr)), cc.cb, 0)
 
 	buf := make([]byte, 16)
 	_, err := sc.Read(buf)
@@ -99,7 +99,7 @@ func TestStreamCopierCallbackErrorOnEOF(t *testing.T) {
 
 	cbErr := errors.New("callback fail")
 	cc := &callbackCounter{err: cbErr}
-	sc := newStreamCopier(io.NopCloser(strings.NewReader("")), cc.cb)
+	sc := newStreamCopier(io.NopCloser(strings.NewReader("")), cc.cb, 0)
 
 	buf := make([]byte, 16)
 	_, err := sc.Read(buf)
@@ -113,7 +113,7 @@ func TestStreamCopierCallbackErrorOnClose(t *testing.T) {
 
 	cbErr := errors.New("callback fail")
 	cc := &callbackCounter{err: cbErr}
-	sc := newStreamCopier(io.NopCloser(strings.NewReader("data")), cc.cb)
+	sc := newStreamCopier(io.NopCloser(strings.NewReader("data")), cc.cb, 0)
 
 	err := sc.Close()
 	if !errors.Is(err, cbErr) {
