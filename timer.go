@@ -26,7 +26,11 @@ type timingsTracker struct {
 
 func newTimingsTracker(report *tripReport) *timingsTracker {
 	report.entry.StartedDateTime = time.Now()
-	report.entry.Timings = &har.Timings{}
+	report.entry.Timings = &har.Timings{
+		DNS:     har.DurationMSNotApplicable,
+		Connect: har.DurationMSNotApplicable,
+		SSL:     har.DurationMSNotApplicable,
+	}
 	return &timingsTracker{
 		report: report,
 	}

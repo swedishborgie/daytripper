@@ -122,6 +122,7 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 			report.entry.Response.Content.Text = report.rspBody.buffer.String()
 		} else {
 			report.entry.Response.Content.Text = base64.StdEncoding.EncodeToString(report.rspBody.buffer.Bytes())
+			report.entry.Response.Content.Encoding = "base64"
 		}
 	}
 

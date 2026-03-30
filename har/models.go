@@ -239,7 +239,7 @@ type PostDataParam struct {
 type Content struct {
 	// Size is the length of the returned content in bytes. Should be equal to response.bodySize if there is no
 	// compression and bigger when the content has been compressed.
-	Size uint64 `json:"size,omitempty"`
+	Size uint64 `json:"size"`
 	// Compression is the number of bytes saved. Leave out this field if the information is not available.
 	Compression uint64 `json:"compression,omitempty"`
 	// MIME type of the response text (value of the Content-Type response header). The charset attribute of the
@@ -249,6 +249,8 @@ type Content struct {
 	// textual content only. The text field is either HTTP decoded text or an encoded (e.g. "base64") representation of
 	// the response body. Leave out this field if the information is not available.
 	Text string `json:"text,omitempty"`
+	// Encoding used for the text field, e.g. "base64". Leave out this field if the text field is plain UTF-8.
+	Encoding string `json:"encoding,omitempty"`
 	// Comment is a user provided comment.
 	Comment string `json:"comment,omitempty"`
 }
@@ -349,6 +351,9 @@ func (t *TimeMS) UnmarshalJSON(b []byte) error {
 // DurationMS wraps time.Duration and serializes and deserializes JSON as a float representing the number of
 // milliseconds in the duration.
 type DurationMS time.Duration
+
+// DurationMSNotApplicable indicates a timing phase that does not apply to this request.
+const DurationMSNotApplicable = DurationMS(-time.Millisecond)
 
 func (d DurationMS) MarshalJSON() ([]byte, error) {
 	return json.Marshal(float64(d) / float64(time.Millisecond))
