@@ -120,3 +120,46 @@ func TestStreamCopierCallbackErrorOnClose(t *testing.T) {
 		t.Fatalf("Close error = %v, want %v", err, cbErr)
 	}
 }
+
+func TestStreamCopierMaxSizePassesThroughFullRead(t *testing.T) {
+	t.Parallel()
+
+	data := strings.Repeat("x", 100)
+	const maxSize int64 = 10
+	sc := newStreamCopier(io.NopCloser(strings.NewReader(data)), nil, maxSize)
+
+	out, err := io.ReadAll(sc)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(out) != data {
+		t.Errorf("reader saw %d bytes, want %d", len(out), len(data))
+	}
+	if sc.buffer.Len() != int(maxSize) {
+		t.Errorf("buffer len = %d, want %d", sc.buffer.Len(), maxSize)
+	}
+	if !sc.truncated {
+		t.Error("expected truncated=true")
+	}
+}
+
+func TestStreamCopierMaxSizeZeroUnlimitedBuffer(t *testing.T) {
+	t.Parallel()
+
+	data := strings.Repeat("y", 50)
+	sc := newStreamCopier(io.NopCloser(strings.NewReader(data)), nil, 0)
+
+	out, err := io.ReadAll(sc)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(out) != data {
+		t.Errorf("reader saw %d bytes, want %d", len(out), len(data))
+	}
+	if sc.buffer.Len() != len(data) {
+		t.Errorf("buffer len = %d, want %d", sc.buffer.Len(), len(data))
+	}
+	if sc.truncated {
+		t.Error("expected truncated=false when maxSize is 0")
+	}
+}

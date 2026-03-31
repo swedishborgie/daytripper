@@ -156,6 +156,35 @@ func TestReceiverWithMaxBytes(t *testing.T) {
 	}
 }
 
+func TestCheckpointFlushWithNoEntries(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	recv := checkpoint.New(
+		checkpoint.WithFileNameGenerator(
+			checkpoint.TimestampFileGenerator(tmpDir, "test-", "2006-01-02_15-04-05.999"),
+		),
+	)
+
+	if err := recv.Start(&receiver.Version{}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := recv.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if err := recv.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	files, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 {
+		t.Errorf("got %d files after Flush, want 1", len(files))
+	}
+}
+
 func TestReceiverWithMaxDuration(t *testing.T) {
 	tmpDir := t.TempDir()
 

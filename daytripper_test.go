@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/swedishborgie/daytripper"
 	"github.com/swedishborgie/daytripper/har"
@@ -711,6 +712,39 @@ func TestMaxBodySizeGzipTruncation(t *testing.T) {
 	}
 }
 
+func TestMaxBodySizeGzipCallerReadsFullCompressedBody(t *testing.T) {
+	t.Parallel()
+
+	plaintext := strings.Repeat("AAAAAAAAAA", 200)
+	const maxSize int64 = 50
+
+	var compressed bytes.Buffer
+	gz := gzip.NewWriter(&compressed)
+	_, _ = gz.Write([]byte(plaintext))
+	_ = gz.Close()
+	compressedBytes := compressed.Bytes()
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(compressedBytes)
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept-Encoding", "gzip")
+		return req, nil
+	})
+	tt.Options = append(tt.Options, daytripper.WithMaxBodySize(maxSize))
+	tt.execute(t)
+
+	if !bytes.Equal(tt.Body, compressedBytes) {
+		t.Errorf("caller received %d bytes, want %d (full compressed body)", len(tt.Body), len(compressedBytes))
+	}
+}
+
 func TestMaxBodySizeRequestTruncation(t *testing.T) {
 	t.Parallel()
 
@@ -725,6 +759,40 @@ func TestMaxBodySizeRequestTruncation(t *testing.T) {
 	})
 	tt.Options = append(tt.Options, daytripper.WithMaxBodySize(maxSize))
 	tt.execute(t)
+
+	entry := tt.Receiver.Entries[0]
+	if int64(len(entry.Request.PostData.Text)) != maxSize {
+		t.Errorf("HAR PostData.Text length = %d, want %d", len(entry.Request.PostData.Text), maxSize)
+	}
+	if entry.Request.PostData.Comment == "" {
+		t.Error("expected a truncation comment on PostData, got none")
+	}
+}
+
+func TestMaxBodySizeRequestServerReadsFullBody(t *testing.T) {
+	t.Parallel()
+
+	const maxSize = 10
+	reqBody := strings.Repeat("B", 100)
+	var receivedBody []byte
+	var readErr error
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, readErr = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		return http.NewRequestWithContext(context.Background(), http.MethodPost, svr.URL,
+			strings.NewReader(reqBody))
+	})
+	tt.Options = append(tt.Options, daytripper.WithMaxBodySize(maxSize))
+	tt.execute(t)
+
+	if readErr != nil {
+		t.Fatalf("server ReadAll: %v", readErr)
+	}
+	if string(receivedBody) != reqBody {
+		t.Errorf("server received %d bytes, want %d", len(receivedBody), len(reqBody))
+	}
 
 	entry := tt.Receiver.Entries[0]
 	if int64(len(entry.Request.PostData.Text)) != maxSize {
@@ -757,6 +825,266 @@ func TestMaxBodySizeZeroUnlimited(t *testing.T) {
 	}
 	if entry.Response.Content.Comment != "" {
 		t.Errorf("expected no truncation comment, got %q", entry.Response.Content.Comment)
+	}
+}
+
+func TestNewNoReceiver(t *testing.T) {
+	t.Parallel()
+
+	dt, err := daytripper.New()
+	if !errors.Is(err, daytripper.ErrNoReceiver) {
+		t.Errorf("got error %v, want ErrNoReceiver", err)
+	}
+	if dt != nil {
+		t.Error("expected nil DayTripper when receiver is missing")
+	}
+}
+
+func TestDayTripperFormEncodedBody(t *testing.T) {
+	t.Parallel()
+
+	const body = "foo=bar&baz=qux"
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, svr.URL,
+			strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return req, nil
+	})
+	tt.execute(t)
+
+	entry := tt.Receiver.Entries[0]
+	if entry.Request.PostData == nil {
+		t.Fatal("expected PostData to be set")
+	}
+	if len(entry.Request.PostData.Params) != 2 {
+		t.Fatalf("got %d params, want 2", len(entry.Request.PostData.Params))
+	}
+	params := make(map[string]string, len(entry.Request.PostData.Params))
+	for _, p := range entry.Request.PostData.Params {
+		params[p.Name] = p.Value
+	}
+	if params["foo"] != "bar" {
+		t.Errorf("foo = %q, want %q", params["foo"], "bar")
+	}
+	if params["baz"] != "qux" {
+		t.Errorf("baz = %q, want %q", params["baz"], "qux")
+	}
+}
+
+func TestDayTripperCookieExpires(t *testing.T) {
+	t.Parallel()
+
+	expires := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{
+			Name:    "session",
+			Value:   "abc123",
+			Expires: expires,
+		})
+		w.WriteHeader(http.StatusOK)
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		return http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+	})
+	tt.execute(t)
+
+	entry := tt.Receiver.Entries[0]
+	if len(entry.Response.Cookies) != 1 {
+		t.Fatalf("got %d response cookies, want 1", len(entry.Response.Cookies))
+	}
+	c := entry.Response.Cookies[0]
+	if c.Expires == nil {
+		t.Fatal("expected cookie Expires to be set, got nil")
+	}
+	if !c.Expires.Equal(expires) {
+		t.Errorf("cookie Expires = %v, want %v", c.Expires, expires)
+	}
+}
+
+func TestBodyDecoderError(t *testing.T) {
+	t.Parallel()
+
+	const rawBody = "not-actually-gzip"
+	decodeErr := errors.New("decoder failed")
+
+	recv := receiver.NewMemoryReceiver()
+	mt := &mockTripper{
+		resp: &http.Response{
+			Status:     "200 OK",
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Encoding": []string{"gzip"},
+				"Content-Type":     []string{"text/plain"},
+			},
+			Body: io.NopCloser(strings.NewReader(rawBody)),
+		},
+	}
+	dt, err := daytripper.New(
+		daytripper.WithReceiver(recv),
+		daytripper.WithTripper(mt),
+		daytripper.WithBodyDecoder(func(string, io.Reader, io.Writer, int64) error {
+			return decodeErr
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/", nil)
+	rsp, err := dt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	_, _ = io.ReadAll(rsp.Body)
+	_ = rsp.Body.Close()
+
+	if len(recv.Entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(recv.Entries))
+	}
+	// When decoder fails the raw bytes should be used as-is.
+	if recv.Entries[0].Response.Content.Text != rawBody {
+		t.Errorf("Content.Text = %q, want %q", recv.Entries[0].Response.Content.Text, rawBody)
+	}
+}
+
+func TestWithBodyDecoder(t *testing.T) {
+	t.Parallel()
+
+	const rawBody = "hello"
+	const decodedBody = "HELLO"
+
+	recv := receiver.NewMemoryReceiver()
+	mt := &mockTripper{
+		resp: &http.Response{
+			Status:     "200 OK",
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Encoding": []string{"custom"},
+				"Content-Type":     []string{"text/plain"},
+			},
+			Body: io.NopCloser(strings.NewReader(rawBody)),
+		},
+	}
+	dt, err := daytripper.New(
+		daytripper.WithReceiver(recv),
+		daytripper.WithTripper(mt),
+		daytripper.WithBodyDecoder(func(_ string, src io.Reader, dst io.Writer, _ int64) error {
+			data, err := io.ReadAll(src)
+			if err != nil {
+				return err
+			}
+			_, err = io.WriteString(dst, strings.ToUpper(string(data)))
+			return err
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/", nil)
+	rsp, err := dt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
+	}
+	_, _ = io.ReadAll(rsp.Body)
+	_ = rsp.Body.Close()
+
+	if len(recv.Entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(recv.Entries))
+	}
+	if recv.Entries[0].Response.Content.Text != decodedBody {
+		t.Errorf("Content.Text = %q, want %q", recv.Entries[0].Response.Content.Text, decodedBody)
+	}
+}
+
+func TestDayTripperRequestBodyNoContentType(t *testing.T) {
+	t.Parallel()
+
+	const body = "raw payload"
+
+	tt := newTestTrip(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}, func(svr *httptest.Server) (*http.Request, error) {
+		// No Content-Type header set.
+		return http.NewRequestWithContext(context.Background(), http.MethodPost, svr.URL,
+			strings.NewReader(body))
+	})
+	tt.execute(t)
+
+	entry := tt.Receiver.Entries[0]
+	if entry.Request.PostData == nil {
+		t.Fatal("expected PostData to be set")
+	}
+	if entry.Request.PostData.MimeType != "" {
+		t.Errorf("MimeType = %q, want empty string", entry.Request.PostData.MimeType)
+	}
+	if entry.Request.PostData.Text != body {
+		t.Errorf("PostData.Text = %q, want %q", entry.Request.PostData.Text, body)
+	}
+}
+
+func TestRoundTripDoneFuncErrorNilBody(t *testing.T) {
+	t.Parallel()
+
+	recvErr := errors.New("receiver error")
+	recv := receiver.NewMemoryReceiver()
+	mt := &mockTripper{
+		resp: &http.Response{
+			Status:     "200 OK",
+			StatusCode: http.StatusOK,
+			Body:       nil,
+		},
+	}
+	dt, err := daytripper.New(
+		daytripper.WithReceiver(recv),
+		daytripper.WithTripper(mt),
+		daytripper.WithEntryMiddleware(func(_ receiver.EntryReceiver) receiver.EntryReceiver {
+			return func(*har.Entry) error { return recvErr }
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/", nil)
+	_, err = dt.RoundTrip(req)
+	if !errors.Is(err, recvErr) {
+		t.Errorf("got error %v, want %v", err, recvErr)
+	}
+}
+
+func TestRoundTripDoneFuncErrorNilResponse(t *testing.T) {
+	t.Parallel()
+
+	transportErr := errors.New("transport error")
+	recvErr := errors.New("receiver error")
+	recv := receiver.NewMemoryReceiver()
+	mt := &mockTripper{err: transportErr}
+	dt, err := daytripper.New(
+		daytripper.WithReceiver(recv),
+		daytripper.WithTripper(mt),
+		daytripper.WithEntryMiddleware(func(_ receiver.EntryReceiver) receiver.EntryReceiver {
+			return func(*har.Entry) error { return recvErr }
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/", nil)
+	_, err = dt.RoundTrip(req)
+	if !errors.Is(err, recvErr) {
+		t.Errorf("got error %v, want %v", err, recvErr)
 	}
 }
 
