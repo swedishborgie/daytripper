@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -80,6 +81,16 @@ func (d *DayTripper) recordRequest(report *tripReport) {
 			pd.Text = base64.StdEncoding.EncodeToString(report.reqBody.buffer.Bytes())
 		}
 
+		if strings.Contains(pd.MimeType, "application/x-www-form-urlencoded") {
+			if params, err := url.ParseQuery(report.reqBody.buffer.String()); err == nil {
+				for k, vs := range params {
+					for _, v := range vs {
+						pd.Params = append(pd.Params, &har.PostDataParam{Name: k, Value: v})
+					}
+				}
+			}
+		}
+
 		if report.reqBody.truncated {
 			pd.Comment = fmt.Sprintf("body truncated at %d bytes", d.maxBodySize)
 		}
@@ -132,6 +143,7 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 		Content: &har.Content{
 			MimeType: report.rsp.Header.Get("Content-Type"),
 		},
+		RedirectURL: report.rsp.Header.Get("Location"),
 		HeadersSize: headerSize(report.rsp.Header),
 	}
 
@@ -153,6 +165,7 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 		}
 
 		report.entry.Response.BodySize = compressedSize
+		report.entry.Response.TransferSize = report.entry.Response.HeadersSize + compressedSize
 		report.entry.Response.Content.Size = uint64(len(bodyBytes))
 		if uint64(len(bodyBytes)) > compressedSize {
 			report.entry.Response.Content.Compression = uint64(len(bodyBytes)) - compressedSize
