@@ -35,16 +35,20 @@ You might find this library useful for the following tasks
 go get github.com/swedishborgie/daytripper
 ```
 ## Example
-See [examples/basic/basic.go](examples/basic/basic.go) for the full example.
+See [examples/streaming/streaming.go](examples/streaming/streaming.go) for the full example.
 ```go
 client := http.DefaultClient
 
+// Open the file to write the HAR to.
+fp, _ := os.Create("log.har")
+defer fp.Close()
+
 // Create the recorder and pass it the client. It will wrap the http.Transport.
 dt, _ := daytripper.New(
-    daytripper.WithReceiver(receiver.NewHARFileReceiver("log.har")),
+    daytripper.WithReceiver(streaming.New(fp)),
     daytripper.WithClient(client),
 )
-// Close the recorder before exiting, this flushes the HAR file to disk (you can also call DayTripper.Flush()).
+// Close the recorder before exiting — this finalizes the HAR JSON and flushes it to fp.
 defer dt.Close()
 
 // Make the request as normal.
