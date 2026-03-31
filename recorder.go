@@ -63,28 +63,27 @@ func (d *DayTripper) recordRequest(report *tripReport) {
 		Cookies:     convertCookies(report.req.Cookies()),
 		Headers:     convertHeaders(report.req.Header),
 		QueryString: queryString,
-		PostData:    &har.PostData{},
 		HeadersSize: headerSize(report.req.Header),
 	}
 
 	if report.reqBody != nil {
 		report.entry.Request.BodySize = report.reqBody.count
-	}
 
-	if report.reqBody != nil {
+		pd := &har.PostData{}
 		if contentType := report.req.Header.Get("Content-Type"); contentType != "" {
-			report.entry.Request.PostData.MimeType = contentType
+			pd.MimeType = contentType
 		}
 
 		if utf8.Valid(report.reqBody.buffer.Bytes()) {
-			report.entry.Request.PostData.Text = report.reqBody.buffer.String()
+			pd.Text = report.reqBody.buffer.String()
 		} else {
-			report.entry.Request.PostData.Text = base64.StdEncoding.EncodeToString(report.reqBody.buffer.Bytes())
+			pd.Text = base64.StdEncoding.EncodeToString(report.reqBody.buffer.Bytes())
 		}
 
 		if report.reqBody.truncated {
-			report.entry.Request.PostData.Comment = fmt.Sprintf("body truncated at %d bytes", d.maxBodySize)
+			pd.Comment = fmt.Sprintf("body truncated at %d bytes", d.maxBodySize)
 		}
+		report.entry.Request.PostData = pd
 	}
 }
 
@@ -110,7 +109,17 @@ func headerSize(headers http.Header) uint64 {
 
 func (d *DayTripper) recordResponse(report *tripReport) {
 	if report.rsp == nil {
-		// Nothing we can do, no response.
+		// No HTTP response (e.g. network error, DNS failure). Emit a minimal response
+		// so Chrome's HAR importer doesn't throw on a missing 'response' field.
+		report.entry.Response = &har.Response{
+			HTTPVersion: "HTTP/1.1",
+			Cookies:     []*har.Cookie{},
+			Headers:     []*har.Header{},
+			Content:     &har.Content{},
+		}
+		if report.rspErr != nil {
+			report.entry.Response.Error = report.rspErr.Error()
+		}
 		return
 	}
 
@@ -169,15 +178,18 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 func convertCookies(cookies []*http.Cookie) []*har.Cookie {
 	retr := make([]*har.Cookie, 0, len(cookies))
 	for _, cookie := range cookies {
-		retr = append(retr, &har.Cookie{
+		c := &har.Cookie{
 			Name:     cookie.Name,
 			Value:    cookie.Value,
 			Path:     cookie.Path,
 			Domain:   cookie.Domain,
-			Expires:  cookie.Expires,
 			Secure:   cookie.Secure,
 			HttpOnly: cookie.HttpOnly,
-		})
+		}
+		if !cookie.Expires.IsZero() {
+			c.Expires = &cookie.Expires
+		}
+		retr = append(retr, c)
 	}
 
 	return retr

@@ -49,16 +49,16 @@ type Page struct {
 	// Title is the recorded page title.
 	Title string `json:"title,omitempty"`
 	// PageTimings contain detailed timing information about how long components of the page took to load.
-	PageTimings *PageTimings `json:"pageTimings,omitempty"`
+	PageTimings *PageTimings `json:"pageTimings"`
 	// Comment is a user provided comment.
 	Comment string `json:"comment,omitempty"`
 }
 
 // PageTimings contains information about page load times.
 type PageTimings struct {
-	// OnContentLoaded is the number of milliseconds since a page load started (Page.StartedDateTime).
+	// OnContentLoad is the number of milliseconds since a page load started (Page.StartedDateTime).
 	// Use -1 if the timing does not apply to the current request.
-	OnContentLoaded DurationMS `json:"onContentLoaded,omitempty"`
+	OnContentLoad DurationMS `json:"onContentLoad,omitempty"`
 	// OnLoad is the number of milliseconds since a page load started (Page.StartedDateTime).
 	// Use -1 if the timing does not apply to the current request.
 	OnLoad DurationMS `json:"onLoad,omitempty"`
@@ -72,7 +72,7 @@ type Entry struct {
 	StartedDateTime time.Time `json:"startedDateTime"`
 	// Time is the total elapsed time of the request in milliseconds.
 	// This is the sum of all timings available in the timings object.
-	Time DurationMS `json:"time,omitempty"`
+	Time DurationMS `json:"time"`
 	// Request contains information about the network request from the client.
 	Request *Request `json:"request,omitempty"`
 	// Response contains informmation about the server response.
@@ -140,9 +140,9 @@ type Request struct {
 // Response contains information about the response to an HTTP request.
 type Response struct {
 	// Status is the HTTP status code of the response.
-	Status int `json:"status,omitempty"`
+	Status int `json:"status"`
 	// StatusText is the HTTP status text provided by the server.
-	StatusText string `json:"statusText,omitempty"`
+	StatusText string `json:"statusText"`
 	// HTTPVersion is the HTTP protocol version used.
 	HTTPVersion string `json:"httpVersion,omitempty"`
 	// Cookies contains all cookies provided as part of the response.
@@ -151,8 +151,8 @@ type Response struct {
 	Headers []*Header `json:"headers"`
 	// Content contains the response content.
 	Content *Content `json:"content,omitempty"`
-	// RedirectURL is the target URL from the Location header (if set).
-	RedirectURL string `json:"redirectURL,omitempty"`
+	// RedirectURL is the target URL from the Location header (if set). Empty string for non-redirects.
+	RedirectURL string `json:"redirectURL"`
 	// HeadersSize is the number of bytes from the start of the HTTP response message until (and including) the double
 	// CRLF before the body. Set to -1 if the info is not available.
 	HeadersSize uint64 `json:"headersSize,omitempty"`
@@ -179,8 +179,8 @@ type Cookie struct {
 	Path string `json:"path,omitempty"`
 	// Domain is the domain the cookie is associated with.
 	Domain string `json:"domain,omitempty"`
-	// Expires is the expiration time of the cookie.
-	Expires time.Time `json:"expires"`
+	// Expires is the expiration time of the cookie. Omitted for session cookies that have no explicit expiry.
+	Expires *time.Time `json:"expires,omitempty"`
 	// Secure indicates whether this cookie can be sent only to TLS endpoints.
 	Secure bool `json:"secure,omitempty"`
 	// HttpOnly indicates whether this cookie is only accessible to HTTP requests (e.g. no JavaScript).
@@ -284,19 +284,19 @@ type CacheEntry struct {
 // Timings is a structure used to keep track of how long each component of an HTTP request took to execute.
 type Timings struct {
 	// Time spent in a queue waiting for a network connection.
-	Blocked DurationMS `json:"blocked,omitempty"`
+	Blocked DurationMS `json:"blocked"`
 	// Time taken to resolve a host name.
-	DNS DurationMS `json:"dns,omitempty"`
+	DNS DurationMS `json:"dns"`
 	// Time taken to create a TCP connection.
-	Connect DurationMS `json:"connect,omitempty"`
+	Connect DurationMS `json:"connect"`
 	// Time taken to send the HTTP request to the server.
-	Send DurationMS `json:"send,omitempty"`
+	Send DurationMS `json:"send"`
 	// Waiting for a response from the server.
-	Wait DurationMS `json:"wait,omitempty"`
+	Wait DurationMS `json:"wait"`
 	// Time taken to read the entire response from the server (or cache).
-	Receive DurationMS `json:"receive,omitempty"`
+	Receive DurationMS `json:"receive"`
 	// The time taken to negotiate a TLS connection.
-	SSL DurationMS `json:"ssl,omitempty"`
+	SSL DurationMS `json:"ssl"`
 	// Comment is a user provided comment.
 	Comment string `json:"comment,omitempty"`
 
