@@ -15,9 +15,6 @@ most Go libraries that support passing in [http.Client](https://pkg.go.dev/net/h
 Recordings can be exported as [HTTP Archives (HAR)](https://en.wikipedia.org/wiki/HAR_(file_format)) which can be viewed
 in most browsers.
 
-*Note:* This library is in very early stages of development and shouldn't be considered stable yet. A tagged version
-will be released after the API is solidified and test coverage is improved. At this point use at your own risk.
-
 ## Features:
  * Record requests and responses from Go applications and libraries using the standard Go HTTP client.
  * Export to Browser compatible HAR files.
