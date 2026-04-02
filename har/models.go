@@ -155,7 +155,7 @@ type Response struct {
 	RedirectURL string `json:"redirectURL"`
 	// HeadersSize is the number of bytes from the start of the HTTP response message until (and including) the double
 	// CRLF before the body. Set to -1 if the info is not available.
-	HeadersSize uint64 `json:"headersSize,omitempty"`
+	HeadersSize uint64 `json:"headersSize"`
 	// BodySize is the size of the received response body in bytes. Set to zero in case of responses coming from the
 	// cache (304). Set to -1 if the info is not available.
 	BodySize uint64 `json:"bodySize"`

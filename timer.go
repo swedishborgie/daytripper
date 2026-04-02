@@ -139,5 +139,9 @@ func (t *timingsTracker) responseRead() {
 	t.startTimes.mutex.Lock()
 	defer t.startTimes.mutex.Unlock()
 
-	t.report.entry.Timings.Receive = har.DurationMS(time.Since(t.startTimes.response))
+	if t.startTimes.response.IsZero() {
+		t.report.entry.Timings.Receive = har.DurationMSNotApplicable
+	} else {
+		t.report.entry.Timings.Receive = har.DurationMS(time.Since(t.startTimes.response))
+	}
 }
