@@ -70,7 +70,13 @@ func (t *timingsTracker) gotFirstResponseByte() {
 	t.startTimes.mutex.Lock()
 	defer t.startTimes.mutex.Unlock()
 
-	t.report.entry.Timings.Wait = har.DurationMS(time.Since(t.startTimes.wait))
+	// WroteRequest is not fired for reused HTTP/2 connections, so startTimes.wait may
+	// be zero. Fall back to startTimes.send, which is set on connection reuse (gotConn).
+	waitStart := t.startTimes.wait
+	if waitStart.IsZero() {
+		waitStart = t.startTimes.send
+	}
+	t.report.entry.Timings.Wait = har.DurationMS(time.Since(waitStart))
 	t.startTimes.response = time.Now()
 }
 
