@@ -1088,6 +1088,125 @@ func TestRoundTripDoneFuncErrorNilResponse(t *testing.T) {
 	}
 }
 
+// TestConcurrentRequestBodyRead reproduces a data race that existed in streamCopier
+// prior to the addition of bufMutex. Go's HTTP/1.1 transport reads req.Body from its
+// own internal goroutine while the calling goroutine is already inside RoundTrip; this
+// means streamCopier.Read (writing count/buffer/truncated) can race with recordRequest
+// (reading those same fields). Running with -race will catch any regression.
+func TestConcurrentRequestBodyRead(t *testing.T) {
+	t.Parallel()
+
+	const (
+		iterations = 50
+		bodySize   = 1 << 16 // 64 KiB — large enough to span multiple reads
+	)
+
+	reqBody := strings.Repeat("X", bodySize)
+
+	svr := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Drain the body so the transport can finish sending it while daytripper
+		// records it concurrently.
+		_, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer svr.Close()
+
+	client := svr.Client()
+	recv := receiver.NewMemoryReceiver()
+	dt, err := daytripper.New(daytripper.WithReceiver(recv), daytripper.WithClient(client))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	var wg sync.WaitGroup
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, svr.URL,
+				strings.NewReader(reqBody))
+			rsp, err := client.Do(req)
+			if err != nil {
+				t.Errorf("request: %v", err)
+				return
+			}
+			_, _ = io.ReadAll(rsp.Body)
+			_ = rsp.Body.Close()
+		}()
+	}
+	wg.Wait()
+
+	if len(recv.Entries) != iterations {
+		t.Errorf("got %d entries, want %d", len(recv.Entries), iterations)
+	}
+	// Every entry must have the full body captured.
+	for i, e := range recv.Entries {
+		if e.Request.PostData == nil {
+			t.Errorf("entry %d: PostData is nil", i)
+			continue
+		}
+		if len(e.Request.PostData.Text) != bodySize {
+			t.Errorf("entry %d: PostData.Text length = %d, want %d", i, len(e.Request.PostData.Text), bodySize)
+		}
+	}
+}
+
+// TestConcurrentResponseBodyRead is the response-side analogue: daytripper wraps the
+// response body in a streamCopier and the caller reads it while the EOF callback
+// (recordTrip) fires concurrently.
+func TestConcurrentResponseBodyRead(t *testing.T) {
+	t.Parallel()
+
+	const (
+		iterations = 50
+		bodySize   = 1 << 16 // 64 KiB
+	)
+
+	respBody := strings.Repeat("Y", bodySize)
+
+	svr := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(respBody))
+	}))
+	defer svr.Close()
+
+	client := svr.Client()
+	recv := receiver.NewMemoryReceiver()
+	dt, err := daytripper.New(daytripper.WithReceiver(recv), daytripper.WithClient(client))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dt.Close() //nolint:errcheck
+
+	var wg sync.WaitGroup
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, svr.URL, nil)
+			rsp, err := client.Do(req)
+			if err != nil {
+				t.Errorf("request: %v", err)
+				return
+			}
+			_, _ = io.ReadAll(rsp.Body)
+			_ = rsp.Body.Close()
+		}()
+	}
+	wg.Wait()
+
+	if len(recv.Entries) != iterations {
+		t.Errorf("got %d entries, want %d", len(recv.Entries), iterations)
+	}
+	for i, e := range recv.Entries {
+		if e.Response.Content.Text != respBody {
+			t.Errorf("entry %d: Content.Text length = %d, want %d", i, len(e.Response.Content.Text), bodySize)
+		}
+	}
+}
+
 func TestDayTripperContentEncodingDeflate(t *testing.T) {
 	t.Parallel()
 

@@ -68,21 +68,22 @@ func (d *DayTripper) recordRequest(report *tripReport) {
 	}
 
 	if report.reqBody != nil {
-		report.entry.Request.BodySize = report.reqBody.count
+		count, bodyBytes, truncated := report.reqBody.snapshot()
+		report.entry.Request.BodySize = count
 
 		pd := &har.PostData{}
 		if contentType := report.req.Header.Get("Content-Type"); contentType != "" {
 			pd.MimeType = contentType
 		}
 
-		if utf8.Valid(report.reqBody.buffer.Bytes()) {
-			pd.Text = report.reqBody.buffer.String()
+		if utf8.Valid(bodyBytes) {
+			pd.Text = string(bodyBytes)
 		} else {
-			pd.Text = base64.StdEncoding.EncodeToString(report.reqBody.buffer.Bytes())
+			pd.Text = base64.StdEncoding.EncodeToString(bodyBytes)
 		}
 
 		if strings.Contains(pd.MimeType, "application/x-www-form-urlencoded") {
-			if params, err := url.ParseQuery(report.reqBody.buffer.String()); err == nil {
+			if params, err := url.ParseQuery(string(bodyBytes)); err == nil {
 				for k, vs := range params {
 					for _, v := range vs {
 						pd.Params = append(pd.Params, &har.PostDataParam{Name: k, Value: v})
@@ -91,7 +92,7 @@ func (d *DayTripper) recordRequest(report *tripReport) {
 			}
 		}
 
-		if report.reqBody.truncated {
+		if truncated {
 			pd.Comment = fmt.Sprintf("body truncated at %d bytes", d.maxBodySize)
 		}
 		report.entry.Request.PostData = pd
@@ -148,9 +149,7 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 	}
 
 	if report.rspBody != nil {
-		bodyBytes := report.rspBody.buffer.Bytes()
-		compressedSize := report.rspBody.count
-		truncated := report.rspBody.truncated
+		compressedSize, bodyBytes, truncated := report.rspBody.snapshot()
 
 		if enc := report.rsp.Header.Get("Content-Encoding"); enc != "" {
 			var buf bytes.Buffer

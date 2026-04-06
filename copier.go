@@ -24,6 +24,9 @@ type streamCopier struct {
 	closed     bool
 	done       chan bool
 	closeMutex sync.Mutex
+	// bufMutex protects count, buffer, and truncated which are written by Read
+	// and read by recordTrip (potentially from a different goroutine).
+	bufMutex sync.Mutex
 }
 
 func newStreamCopier(wrapped io.ReadCloser, cb streamCloseCallback, maxSize int64) *streamCopier {
@@ -32,8 +35,9 @@ func newStreamCopier(wrapped io.ReadCloser, cb streamCloseCallback, maxSize int6
 
 func (s *streamCopier) Read(p []byte) (n int, err error) {
 	cnt, err := s.wrapped.Read(p)
-	s.count += uint64(cnt)
 
+	s.bufMutex.Lock()
+	s.count += uint64(cnt)
 	if s.maxSize <= 0 || int64(s.buffer.Len()) < s.maxSize {
 		canBuffer := cnt
 		if s.maxSize > 0 {
@@ -45,6 +49,7 @@ func (s *streamCopier) Read(p []byte) (n int, err error) {
 		}
 		s.buffer.Write(p[:canBuffer])
 	}
+	s.bufMutex.Unlock()
 
 	if errors.Is(err, io.EOF) {
 		if err := s.closeNotify(); err != nil {
@@ -53,6 +58,17 @@ func (s *streamCopier) Read(p []byte) (n int, err error) {
 	}
 
 	return cnt, err
+}
+
+// snapshot returns a consistent copy of count, buffer bytes, and truncated flag.
+func (s *streamCopier) snapshot() (count uint64, buf []byte, truncated bool) {
+	s.bufMutex.Lock()
+	defer s.bufMutex.Unlock()
+	count = s.count
+	buf = make([]byte, s.buffer.Len())
+	copy(buf, s.buffer.Bytes())
+	truncated = s.truncated
+	return
 }
 
 func (s *streamCopier) Close() error {
