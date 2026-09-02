@@ -633,10 +633,10 @@ func TestDayTripperContentEncodingGzip(t *testing.T) {
 	if entry.Response.Content.Text != plaintext {
 		t.Errorf("Content.Text = %q, want %q", entry.Response.Content.Text, plaintext)
 	}
-	if entry.Response.Content.Size != uint64(len(plaintext)) {
+	if entry.Response.Content.Size != int64(len(plaintext)) {
 		t.Errorf("Content.Size = %d, want %d", entry.Response.Content.Size, len(plaintext))
 	}
-	if entry.Response.BodySize >= uint64(len(plaintext)) {
+	if entry.Response.BodySize >= int64(len(plaintext)) {
 		t.Errorf("BodySize = %d should be less than uncompressed size %d", entry.Response.BodySize, len(plaintext))
 	}
 	if entry.Response.Content.Compression == 0 {
@@ -1255,7 +1255,7 @@ func TestDayTripperContentEncodingDeflate(t *testing.T) {
 			if entry.Response.Content.Text != plaintext {
 				t.Errorf("Content.Text = %q, want %q", entry.Response.Content.Text, plaintext)
 			}
-			if entry.Response.Content.Size != uint64(len(plaintext)) {
+			if entry.Response.Content.Size != int64(len(plaintext)) {
 				t.Errorf("Content.Size = %d, want %d", entry.Response.Content.Size, len(plaintext))
 			}
 		})

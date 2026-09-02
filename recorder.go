@@ -64,12 +64,12 @@ func (d *DayTripper) recordRequest(report *tripReport) {
 		Cookies:     convertCookies(report.req.Cookies()),
 		Headers:     convertHeaders(report.req.Header),
 		QueryString: queryString,
-		HeadersSize: headerSize(report.req.Header),
+		HeadersSize: int64(headerSize(report.req.Header)),
 	}
 
 	if report.reqBody != nil {
 		count, bodyBytes, truncated := report.reqBody.snapshot()
-		report.entry.Request.BodySize = count
+		report.entry.Request.BodySize = int64(count)
 
 		pd := &har.PostData{}
 		if contentType := report.req.Header.Get("Content-Type"); contentType != "" {
@@ -145,7 +145,7 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 			MimeType: report.rsp.Header.Get("Content-Type"),
 		},
 		RedirectURL: report.rsp.Header.Get("Location"),
-		HeadersSize: headerSize(report.rsp.Header),
+		HeadersSize: int64(headerSize(report.rsp.Header)),
 	}
 
 	if report.rspBody != nil {
@@ -163,9 +163,9 @@ func (d *DayTripper) recordResponse(report *tripReport) {
 			}
 		}
 
-		report.entry.Response.BodySize = compressedSize
-		report.entry.Response.TransferSize = report.entry.Response.HeadersSize + compressedSize
-		report.entry.Response.Content.Size = uint64(len(bodyBytes))
+		report.entry.Response.BodySize = int64(compressedSize)
+		report.entry.Response.TransferSize = report.entry.Response.HeadersSize + int64(compressedSize)
+		report.entry.Response.Content.Size = int64(len(bodyBytes))
 		if uint64(len(bodyBytes)) > compressedSize {
 			report.entry.Response.Content.Compression = uint64(len(bodyBytes)) - compressedSize
 		}

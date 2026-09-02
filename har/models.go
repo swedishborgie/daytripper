@@ -130,9 +130,9 @@ type Request struct {
 	PostData *PostData `json:"postData,omitempty"`
 	// HeadersSize is the total number of bytes from the start of the HTTP request message until (and including) the
 	// double CRLF before the body. Set to -1 if the info is not available.
-	HeadersSize uint64 `json:"headersSize,omitempty"`
+	HeadersSize int64 `json:"headersSize,omitempty"`
 	// BodySize is the size of the request body (POST data payload) in bytes. Set to -1 if the info is not available.
-	BodySize uint64 `json:"bodySize"`
+	BodySize int64 `json:"bodySize"`
 	// Comment is a user provided comment.
 	Comment string `json:"comment,omitempty"`
 }
@@ -155,16 +155,16 @@ type Response struct {
 	RedirectURL string `json:"redirectURL"`
 	// HeadersSize is the number of bytes from the start of the HTTP response message until (and including) the double
 	// CRLF before the body. Set to -1 if the info is not available.
-	HeadersSize uint64 `json:"headersSize"`
+	HeadersSize int64 `json:"headersSize"`
 	// BodySize is the size of the received response body in bytes. Set to zero in case of responses coming from the
 	// cache (304). Set to -1 if the info is not available.
-	BodySize uint64 `json:"bodySize"`
+	BodySize int64 `json:"bodySize"`
 	// Comment is a user provided comment.
 	Comment string `json:"comment,omitempty"`
 
 	// Chrome Extensions
 
-	TransferSize            uint64 `json:"_transferSize,omitempty"`
+	TransferSize            int64 `json:"_transferSize,omitempty"`
 	Error                   any    `json:"_error,omitempty"`
 	FetchedViaServiceWorker bool   `json:"_fetchedViaServiceWorker,omitempty"`
 }
@@ -239,7 +239,7 @@ type PostDataParam struct {
 type Content struct {
 	// Size is the length of the returned content in bytes. Should be equal to response.bodySize if there is no
 	// compression and bigger when the content has been compressed.
-	Size uint64 `json:"size"`
+	Size int64 `json:"size"`
 	// Compression is the number of bytes saved. Leave out this field if the information is not available.
 	Compression uint64 `json:"compression,omitempty"`
 	// MIME type of the response text (value of the Content-Type response header). The charset attribute of the
